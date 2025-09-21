@@ -37,21 +37,30 @@ source ./activate.sh             # Activate development environment
 pip install -e .                 # Install with basic dependencies
 pip install -e ".[full]"         # Install with ALL dependencies (heavy)
 pip install -e ".[dev]"          # Install with dev dependencies
+pip install -e ".[minimal]"      # Install with minimal dependencies only
 ```
 
 ### Dependency Management
-The project has **two-tier dependency system**:
+The project has **three-tier dependency system**:
 - **Basic install**: Core functionality with LLM providers only
+- **Minimal install**: Same as basic (explicitly defined)
 - **Full install**: Includes heavy vector processing dependencies
+- **Dev install**: Development tools for testing and code quality
 
 For development with minimal dependencies:
 ```bash
 pip install -e .                 # Basic: no vector DBs, no sentence-transformers
+pip install -e ".[minimal]"      # Explicit minimal install
 ```
 
 For full functionality:
 ```bash
 pip install -e ".[full]"         # Full: includes ChromaDB, Pinecone, sentence-transformers
+```
+
+For development with all tools:
+```bash
+pip install -e ".[dev]"          # Dev: includes pytest, black, mypy, flake8, pre-commit
 ```
 
 ### Testing and Validation
@@ -68,9 +77,12 @@ pytest --cov=easyprompt tests/  # Run tests with coverage
 make format                     # Format code with black and isort
 make lint                       # Run flake8 and mypy
 make format-check              # Check formatting without changes
+make test-cov                   # Run tests with coverage report
+make run-tests                  # Run comprehensive test suite (format-check + lint + test)
 black easyprompt/ tests/       # Format code directly
 mypy easyprompt/               # Type checking
 flake8 easyprompt/ tests/      # Linting
+isort easyprompt/ tests/       # Import sorting
 ```
 
 ### CLI Usage and Testing
