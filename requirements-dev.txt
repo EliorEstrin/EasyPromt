@@ -1,0 +1,12 @@
+# EasyPrompt Development Dependencies
+# Development and testing tools
+#
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+
+# Development Dependencies
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+black>=23.11.0
+flake8>=6.1.0
+mypy>=1.7.1
+pre-commit>=3.6.0

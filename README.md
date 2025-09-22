@@ -52,9 +52,7 @@ cd easyprompt
    easyprompt chat  # Interactive mode
    ```
 
-📖 **See [QUICKSTART.md](QUICKSTART.md) for detailed setup guide**
-
-> **For Developers**: See [DEVELOPMENT.md](DEVELOPMENT.md) for development setup and workflow
+📖 **For detailed setup and development info, see [CLAUDE.md](CLAUDE.md)**
 
 ## Usage Examples
 
@@ -258,7 +256,7 @@ pytest tests/test_query_processor.py
 
 ### Getting Help
 
-- Check the [documentation](./ARCHITECTURE.md) for detailed architecture info
+- Check [CLAUDE.md](./CLAUDE.md) for detailed architecture and development info
 - Search existing [issues](https://github.com/your-org/easyprompt/issues)
 - Create a new issue with detailed information
 

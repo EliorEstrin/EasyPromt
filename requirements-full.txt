@@ -1,0 +1,11 @@
+# EasyPrompt Full Dependencies
+# Heavy vector processing dependencies
+#
+# Install with: pip install -r requirements.txt -r requirements-full.txt
+
+# Vector Processing Dependencies
+fastapi>=0.104.1
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+chromadb>=0.4.18
+pinecone-client>=2.2.4

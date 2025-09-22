@@ -1,0 +1,19 @@
+# EasyPrompt Core Dependencies
+# Generated from pyproject.toml
+#
+# Install with: pip install -r requirements.txt
+# For full functionality: pip install -r requirements.txt -r requirements-full.txt
+
+# Core Dependencies
+typer>=0.9.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+numpy>=1.24.3
+google-generativeai>=0.3.2
+openai>=1.3.8
+anthropic>=0.7.8
+rich>=13.7.0
+httpx>=0.25.2
+aiofiles>=23.2.1
+tenacity>=8.2.3
