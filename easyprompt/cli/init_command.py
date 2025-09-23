@@ -2858,16 +2858,24 @@ def configure_index_settings() -> Dict[str, Any]:
     console.print("Configure chunking strategy, storage paths, and processing options.")
 
     # Load current settings to show current choice
-    current_config = load_existing_env_file()
-    current_strategy = current_config.get("CHUNKING_STRATEGY", "recursive")
-    current_chunk_size = current_config.get("CHUNK_SIZE", "1000")
-    current_overlap = current_config.get("CHUNK_OVERLAP", "200")
+    try:
+        current_config = load_existing_env_file()
+        current_strategy = current_config.get("CHUNKING_STRATEGY", "recursive")
+        current_chunk_size = current_config.get("CHUNK_SIZE", "1000")
+        current_overlap = current_config.get("CHUNK_OVERLAP", "200")
 
-    # Show current settings
-    console.print(f"\n[bold green]📋 Current Settings:[/bold green]")
-    console.print(f"• Chunking Strategy: [yellow]{current_strategy.title()}[/yellow]")
-    console.print(f"• Chunk Size: [yellow]{current_chunk_size}[/yellow] characters")
-    console.print(f"• Chunk Overlap: [yellow]{current_overlap}[/yellow] characters")
+        # Show current settings
+        console.print(f"\n[bold green]📋 Current Settings:[/bold green]")
+        console.print(f"• Chunking Strategy: [yellow]{current_strategy.title()}[/yellow]")
+        console.print(f"• Chunk Size: [yellow]{current_chunk_size}[/yellow] characters")
+        console.print(f"• Chunk Overlap: [yellow]{current_overlap}[/yellow] characters")
+    except Exception as e:
+        # Fallback if there's an issue loading config
+        current_strategy = "recursive"
+        console.print(f"\n[bold green]📋 Default Settings:[/bold green]")
+        console.print(f"• Chunking Strategy: [yellow]Recursive[/yellow] (default)")
+        console.print(f"• Chunk Size: [yellow]1000[/yellow] characters")
+        console.print(f"• Chunk Overlap: [yellow]200[/yellow] characters")
 
     console.print("\n[bold yellow]Chunking Strategy Options:[/bold yellow]")
     # Highlight current choice
@@ -2879,7 +2887,14 @@ def configure_index_settings() -> Dict[str, Any]:
     ]
 
     for num, name, desc in strategies:
-        if name.lower().replace(" ", "") == current_strategy.replace("_", ""):
+        # Convert strategy names for comparison
+        strategy_key = name.lower().replace(" ", "").replace("size", "")
+        current_key = current_strategy.lower().replace("_", "")
+
+        if (strategy_key == "recursive" and current_key == "recursive") or \
+           (strategy_key == "fixed" and current_key == "fixed") or \
+           (strategy_key == "sentence" and current_key == "sentence") or \
+           (strategy_key == "paragraph" and current_key == "paragraph"):
             console.print(f"{num}. [bold green]{name}[/bold green] - {desc} [green]← Current[/green]")
         else:
             console.print(f"{num}. [cyan]{name}[/cyan] - {desc}")
