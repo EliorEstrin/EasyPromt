@@ -13,56 +13,221 @@ from typing import Dict, List, Any
 console = Console()
 
 
+def safe_prompt_ask(*args, **kwargs):
+    """Wrapper for Prompt.ask that handles Ctrl+C gracefully by returning None."""
+    try:
+        return Prompt.ask(*args, **kwargs)
+    except KeyboardInterrupt:
+        return None
+
+
+def safe_confirm_ask(*args, **kwargs):
+    """Wrapper for Confirm.ask that handles Ctrl+C gracefully by returning False."""
+    try:
+        return Confirm.ask(*args, **kwargs)
+    except KeyboardInterrupt:
+        return False
+
+
+def safe_input(prompt: str):
+    """Wrapper for console.input that handles Ctrl+C gracefully by returning None."""
+    try:
+        return console.input(prompt)
+    except KeyboardInterrupt:
+        return None
+
+
+def load_existing_env_file(env_file: Path) -> Dict[str, str]:
+    """Load existing .env file and return configuration as dictionary."""
+    config = {}
+    try:
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    config[key.strip()] = value.strip()
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not read .env file: {e}[/yellow]")
+    return config
+
+
+def is_config_usable(config: Dict[str, str]) -> bool:
+    """Check if the existing configuration has minimum required settings to be usable."""
+    # Check for at least one valid LLM provider (not placeholder)
+    has_llm = any(
+        config.get(key) and not config[key].startswith("your_") and len(config[key]) > 10
+        for key in ["GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+    )
+
+    # Check for CLI tool name
+    has_cli_tool = config.get("CLI_TOOL_NAME") and len(config["CLI_TOOL_NAME"]) > 0
+
+    # Check for vector DB type
+    has_vector_db = config.get("VECTOR_DB_TYPE") and config["VECTOR_DB_TYPE"] in ["chromadb", "pinecone", "weaviate"]
+
+    return has_llm and has_cli_tool and has_vector_db
+
+
+def show_existing_config_status(config: Dict[str, str]):
+    """Show status of existing configuration in a user-friendly way."""
+    console.print(Panel(
+        "[bold green]✅ Configuration Ready[/bold green]",
+        style="green"
+    ))
+
+    if not config:
+        console.print("[yellow]⚠️  .env file exists but appears to be empty or invalid[/yellow]")
+        console.print("You can run '[cyan]easyprompt init --force[/cyan]' to recreate it")
+        return
+
+    # Analyze configuration
+    vector_db = config.get("VECTOR_DB_TYPE", "Not configured")
+    cli_tool = config.get("CLI_TOOL_NAME", "Not configured")
+
+    # Count configured LLM providers
+    llm_providers = []
+    for key in ["GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]:
+        if config.get(key) and not config[key].startswith("your_"):
+            provider_name = key.replace("_API_KEY", "").title()
+            llm_providers.append(provider_name)
+
+    # Show summary
+    console.print(f"\n[bold]📋 Configuration Summary:[/bold]")
+    console.print(f"  🗄️  Vector Database: [cyan]{vector_db}[/cyan]")
+    console.print(f"  ⚙️  CLI Tool: [cyan]{cli_tool}[/cyan]")
+
+    if llm_providers:
+        console.print(f"  🤖 LLM Providers: [green]{', '.join(llm_providers)}[/green]")
+    else:
+        console.print("  🤖 LLM Providers: [yellow]None configured (check for placeholder values)[/yellow]")
+
+    # Show next steps
+    console.print(f"\n[bold]🚀 Next Steps:[/bold]")
+
+    if not llm_providers and any(config.get(k, "").startswith("your_") for k in ["GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]):
+        console.print("  1. Edit .env file and replace placeholder API keys with real ones")
+        console.print("  2. Run: [cyan]easyprompt index[/cyan] to index your documentation")
+        console.print("  3. Try: [cyan]easyprompt query \"your request\"[/cyan]")
+    elif cli_tool == "Not configured":
+        console.print("  1. Edit .env file and set CLI_TOOL_NAME")
+        console.print("  2. Run: [cyan]easyprompt index[/cyan] to index your documentation")
+        console.print("  3. Try: [cyan]easyprompt query \"your request\"[/cyan]")
+    else:
+        console.print("  1. Run: [cyan]easyprompt index[/cyan] to index your documentation")
+        console.print("  2. Try: [cyan]easyprompt query \"your request\"[/cyan]")
+        console.print("  3. Start interactive mode: [cyan]easyprompt chat[/cyan]")
+
+    console.print(f"\n[dim]To reconfigure completely, use: easyprompt init --force[/dim]")
+
+
+def start_interactive_configuration(existing_config: Dict[str, str], env_file: Path):
+    """Start interactive configuration mode with optional existing settings pre-loaded."""
+    # Convert existing config to the format expected by the interactive mode
+    config = {}
+
+    # Load existing values into config dict
+    for key, value in existing_config.items():
+        if value and not value.startswith("#"):
+            config[key] = value
+
+    if config:
+        console.print(f"\n[bold blue]🔄 Current settings loaded - you can modify any section![/bold blue]")
+        # Skip welcome screen for existing users - they already know the system
+    else:
+        console.print(f"\n[bold blue]🎯 Let's configure EasyPrompt step by step![/bold blue]")
+        # Show welcome with exploration options for new users only
+        welcome_result = show_welcome()
+        if welcome_result is None:
+            # User pressed Ctrl+C during welcome, exit gracefully
+            console.print("[yellow]Configuration cancelled[/yellow]")
+            return
+
+    # Main configuration loop
+    while True:
+        try:
+            console.clear()
+            show_header()
+            show_current_config(config)
+
+            choice = show_main_menu()
+
+            if choice == "1":
+                result = configure_vector_database()
+                if result:
+                    config.update(result)
+                    auto_save_config(config, env_file)
+            elif choice == "2":
+                result = configure_embedding_model()
+                if result:
+                    config.update(result)
+                    auto_save_config(config, env_file)
+            elif choice == "3":
+                result = configure_llm_providers()
+                if result:
+                    config.update(result)
+                    auto_save_config(config, env_file)
+            elif choice == "4":
+                result = configure_project_setup()
+                if result:
+                    config.update(result)
+                    auto_save_config(config, env_file)
+            elif choice == "5":
+                result = configure_documentation_files()
+                if result:
+                    config.update(result)
+                    auto_save_config(config, env_file)
+            elif choice == "6":
+                result = configure_index_settings()
+                if result:
+                    config.update(result)
+                    auto_save_config(config, env_file)
+            elif choice == "7":
+                result = configure_advanced_settings()
+                if result:
+                    config.update(result)
+                    auto_save_config(config, env_file)
+            elif choice == "8":
+                show_configuration_overview(config)
+            elif choice == "9":
+                show_help_and_tips()
+            elif choice == "q":
+                console.print("[yellow]Exiting configuration...[/yellow]")
+                return
+
+            # Only pause for configuration actions, not info screens
+            if choice in ["1", "2", "3", "4", "5", "6", "7"]:
+                pass  # These sections handle their own pausing
+            elif choice in ["8", "9"]:
+                try:
+                    console.input("\n[dim]Press Enter to continue...[/dim]")
+                except KeyboardInterrupt:
+                    # Ctrl+C just goes back to main menu
+                    continue
+
+        except KeyboardInterrupt:
+            # Ctrl+C in main menu - exit immediately (auto-save already happened)
+            console.print("\n[yellow]Exiting configuration...[/yellow]")
+            return
+
+
 def init_configuration(force: bool = False):
     """Initialize EasyPrompt configuration with ultra-interactive interface."""
     env_file = Path(".env")
 
-    # Check if .env already exists
-    if env_file.exists() and not force:
-        if not Confirm.ask(".env file already exists. Overwrite?"):
-            console.print("[yellow]Configuration initialization cancelled[/yellow]")
-            return
+    # Load existing configuration if available
+    existing_config = {}
+    if env_file.exists():
+        existing_config = load_existing_env_file(env_file)
+        if existing_config:
+            console.print("[green]✅ Loading existing configuration[/green]")
+        else:
+            console.print("[yellow]📄 Found empty .env file - starting fresh[/yellow]")
+    else:
+        console.print("[blue]📝 Creating new configuration[/blue]")
 
-    # Show welcome with exploration options
-    show_welcome()
-
-    # Main configuration loop
-    config = {}
-
-    while True:
-        console.clear()
-        show_header()
-        show_current_config(config)
-
-        choice = show_main_menu()
-
-        if choice == "1":
-            config.update(configure_vector_database())
-        elif choice == "2":
-            config.update(configure_llm_providers())
-        elif choice == "3":
-            config.update(configure_cli_tool())
-        elif choice == "4":
-            config.update(configure_documentation())
-        elif choice == "5":
-            config.update(configure_advanced_settings())
-        elif choice == "6":
-            show_configuration_overview(config)
-        elif choice == "7":
-            show_help_and_tips()
-        elif choice == "8":
-            if validate_and_save_config(config, env_file):
-                break
-        elif choice == "q":
-            if Confirm.ask("Exit without saving?"):
-                console.print("[yellow]Configuration cancelled[/yellow]")
-                return
-
-        # Only pause for configuration actions, not info screens
-        if choice in ["1", "2", "3", "4", "5"]:
-            pass  # These sections handle their own pausing
-        elif choice in ["6", "7"]:
-            console.input("\n[dim]Press Enter to continue...[/dim]")
+    # Always start interactive configuration (with existing values pre-loaded if available)
+    start_interactive_configuration(existing_config, env_file)
 
 
 def show_welcome():
@@ -88,7 +253,11 @@ configuration build up as you go!
         padding=(1, 2)
     ))
 
-    console.input("\n[bold cyan]Press Enter to start exploring...[/bold cyan]")
+    result = safe_input("\n[bold cyan]Press Enter to start exploring...[/bold cyan]")
+    if result is None:
+        # Ctrl+C pressed, return None to indicate cancellation
+        return None
+    return True
 
 
 def show_header():
@@ -100,6 +269,199 @@ def show_header():
     ))
 
 
+def get_config_status(key: str, value: str) -> str:
+    """Get meaningful status description for configuration values."""
+    if not value:
+        return "[red]Not set[/red]"
+
+    # API Key status checks
+    if "API_KEY" in key:
+        if value.startswith("your_"):
+            return "[yellow]Placeholder set[/yellow]"
+        elif len(value) < 10:
+            return "[red]Invalid key[/red]"
+        else:
+            # Test the key if possible
+            provider = key.replace("_API_KEY", "").lower()
+            if test_provider_key_quick(provider, value):
+                return "[green]Key verified[/green]"
+            else:
+                return "[yellow]Key not tested[/yellow]"
+
+    # Vector DB specific checks
+    elif key == "VECTOR_DB_TYPE":
+        if value in ["chromadb", "pinecone", "weaviate"]:
+            return "[green]Valid type[/green]"
+        else:
+            return "[red]Invalid type[/red]"
+
+    elif key == "VECTOR_DB_URL":
+        if value.startswith("http"):
+            return "[green]URL configured[/green]"
+        else:
+            # Check if local path exists or can be created
+            from pathlib import Path
+            try:
+                path = Path(value)
+                if path.exists():
+                    return "[green]Path exists[/green]"
+                elif path.parent.exists():
+                    return "[green]Path ready[/green]"
+                else:
+                    return "[yellow]Path will be created[/yellow]"
+            except:
+                return "[yellow]Path configured[/yellow]"
+
+    # Embedding model checks
+    elif key == "EMBEDDING_MODEL":
+        if value.startswith("sentence-transformers/"):
+            return "[green]Model configured[/green]"
+        else:
+            return "[yellow]Custom model[/yellow]"
+
+    # Project setup checks
+    elif key == "PROJECT_NAME":
+        if value:
+            return "[green]Project name set[/green]"
+        else:
+            return "[red]Not configured[/red]"
+
+    elif key == "PROJECT_DOMAIN":
+        if value:
+            return "[green]Domain set[/green]"
+        else:
+            return "[yellow]Optional[/yellow]"
+
+    # Documentation checks
+    elif key == "DOCS_PATH":
+        from pathlib import Path
+        # Handle multiple directories separated by semicolon
+        paths = value.split(";") if ";" in value else [value]
+
+        total_files = 0
+        existing_dirs = 0
+
+        for path in paths:
+            path_obj = Path(path.strip())
+            if path_obj.exists() and path_obj.is_dir():
+                existing_dirs += 1
+                # Count supported files (only in immediate directory, not recursive)
+                md_files = len(list(path_obj.glob("*.md"))) + len(list(path_obj.glob("*.markdown")))
+                txt_files = len(list(path_obj.glob("*.txt")))
+                pdf_files = len(list(path_obj.glob("*.pdf")))
+                total_files += md_files + txt_files + pdf_files
+
+        if existing_dirs == len(paths) and total_files > 0:
+            return f"[green]{total_files} files found[/green]"
+        elif existing_dirs == len(paths) and total_files == 0:
+            return f"[yellow]{existing_dirs} dir(s), no files[/yellow]"
+        elif existing_dirs > 0:
+            return f"[yellow]{existing_dirs}/{len(paths)} dirs, {total_files} files[/yellow]"
+        else:
+            return "[yellow]Dirs will be created[/yellow]"
+
+    elif key == "SUPPORTED_FILE_TYPES":
+        types = [t.strip() for t in value.split(",") if t.strip()] if value else []
+        if len(types) > 0:
+            # Show the actual extensions
+            ext_display = ", ".join(f".{t}" for t in types)
+            return f"[green]{ext_display}[/green]"
+        else:
+            return "[red]No file types[/red]"
+
+    # Advanced settings
+    elif key in ["MAX_CONTEXT_LENGTH", "TOP_K_RESULTS"]:
+        try:
+            num = int(value)
+            if num > 0:
+                return "[green]Valid number[/green]"
+            else:
+                return "[red]Invalid value[/red]"
+        except:
+            return "[red]Not a number[/red]"
+
+    elif key == "SIMILARITY_THRESHOLD":
+        try:
+            num = float(value)
+            if 0.0 <= num <= 1.0:
+                return "[green]Valid threshold[/green]"
+            else:
+                return "[red]Out of range[/red]"
+        except:
+            return "[red]Invalid number[/red]"
+
+    elif key in ["DRY_RUN", "CONFIRM_BEFORE_EXECUTION"]:
+        if value.lower() in ["true", "false"]:
+            return "[green]Boolean set[/green]"
+        else:
+            return "[red]Invalid boolean[/red]"
+
+    # Default for any other settings
+    else:
+        return "[green]Configured[/green]"
+
+
+def test_provider_key_quick(provider: str, api_key: str) -> bool:
+    """Quick test of provider key without detailed output."""
+    import logging
+
+    # Suppress HTTP request logs during testing
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("anthropic").setLevel(logging.WARNING)
+    logging.getLogger("google.generativeai").setLevel(logging.WARNING)
+
+    try:
+        if provider == "gemini":
+            return test_gemini_key_quick(api_key)
+        elif provider == "openai":
+            return test_openai_key_quick(api_key)
+        elif provider == "anthropic":
+            return test_anthropic_key_quick(api_key)
+        else:
+            return False
+    except:
+        return False
+
+
+def test_gemini_key_quick(api_key: str) -> bool:
+    """Quick test of Gemini key."""
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        models = list(genai.list_models())
+        return len(models) > 0
+    except:
+        return False
+
+
+def test_openai_key_quick(api_key: str) -> bool:
+    """Quick test of OpenAI key."""
+    try:
+        import openai
+        client = openai.OpenAI(api_key=api_key)
+        models = client.models.list()
+        return len(models.data) > 0
+    except:
+        return False
+
+
+def test_anthropic_key_quick(api_key: str) -> bool:
+    """Quick test of Anthropic key."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        # Try a minimal request
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=1,
+            messages=[{"role": "user", "content": "Hi"}]
+        )
+        return True
+    except:
+        return False
+
+
 def show_current_config(config: Dict[str, Any]):
     """Show current configuration status."""
     if not config:
@@ -109,14 +471,16 @@ def show_current_config(config: Dict[str, Any]):
     table = Table(title="📋 Current Configuration", show_header=True, header_style="bold magenta")
     table.add_column("Setting", style="cyan", no_wrap=True)
     table.add_column("Value", style="green")
-    table.add_column("Status", justify="center")
+    table.add_column("Status", justify="left", style="white")
 
     # Group settings by category
     categories = {
         "Vector DB": ["VECTOR_DB_TYPE", "VECTOR_DB_URL", "PINECONE_API_KEY", "WEAVIATE_URL"],
+        "Embedding Model": ["EMBEDDING_MODEL"],
         "LLM Providers": ["GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
-        "CLI Tool": ["CLI_TOOL_NAME", "CLI_TOOL_PATH"],
-        "Documentation": ["DOCS_PATH", "README_PATH"],
+        "Project": ["PROJECT_NAME", "PROJECT_DOMAIN"],
+        "Documentation": ["DOCS_PATH", "SUPPORTED_FILE_TYPES"],
+        "Index Settings": ["CHUNKING_STRATEGY", "CHUNK_SIZE", "CHUNK_OVERLAP", "INDEX_STORAGE_PATH", "CHUNKED_DOCS_PATH"],
         "Advanced": ["MAX_CONTEXT_LENGTH", "TOP_K_RESULTS", "SIMILARITY_THRESHOLD"]
     }
 
@@ -126,7 +490,8 @@ def show_current_config(config: Dict[str, Any]):
             table.add_row(f"[bold]{category}[/bold]", "", "")
             for key, value in category_items:
                 display_value = "***" if "API_KEY" in key else str(value)
-                table.add_row(f"  {key}", display_value, "✅")
+                status = get_config_status(key, value)
+                table.add_row(f"  {key}", display_value, status)
 
     console.print(table)
     console.print()
@@ -138,27 +503,31 @@ def show_main_menu() -> str:
 
     menu_options = [
         ("1", "🗄️  Vector Database", "Choose and configure your vector database"),
-        ("2", "🤖 LLM Providers", "Configure AI language model providers"),
-        ("3", "⚙️  CLI Tool", "Set up your target CLI tool"),
-        ("4", "📚 Documentation", "Configure documentation sources"),
-        ("5", "🎛️  Advanced Settings", "Performance and behavior tuning"),
-        ("6", "👀 Preview Configuration", "See complete configuration overview"),
-        ("7", "❓ Help & Tips", "Get help and see examples"),
-        ("8", "💾 Save & Exit", "Validate and save configuration"),
-        ("q", "🚪 Quit", "Exit without saving")
+        ("2", "🔤 Embedding Model", "Configure text embedding model for RAG"),
+        ("3", "🤖 LLM Providers", "Configure AI language model providers"),
+        ("4", "📋 Project Setup", "Configure your project or domain name"),
+        ("5", "📚 Documentation Files", "Configure documentation file sources"),
+        ("6", "⚙️  Index Settings", "Configure chunking strategy and indexing options"),
+        ("7", "🎛️  Advanced Settings", "Performance and behavior tuning"),
+        ("8", "👀 Preview Configuration", "See complete configuration overview"),
+        ("9", "❓ Help & Tips", "Get help and see examples"),
+        ("q", "🚪 Exit", "Exit configuration")
     ]
 
     for key, title, desc in menu_options:
         console.print(f"  {key}. [bold cyan]{title}[/bold cyan] - [dim]{desc}[/dim]")
 
     console.print()
-    choice = Prompt.ask(
-        "[bold]Choose section",
-        choices=[opt[0] for opt in menu_options],
-        default="1"
-    )
-
-    return choice
+    try:
+        choice = Prompt.ask(
+            "[bold]Choose section",
+            choices=["1", "2", "3", "4", "5", "6", "7", "8", "9", "q"],
+            default="1"
+        )
+        return choice
+    except KeyboardInterrupt:
+        # Let the KeyboardInterrupt bubble up to the main loop
+        raise
 
 
 def configure_vector_database() -> Dict[str, Any]:
@@ -172,12 +541,23 @@ def configure_vector_database() -> Dict[str, Any]:
     # Show detailed comparison
     show_vector_db_comparison()
 
+    console.print("\n[bold yellow]🗄️ Vector Database Options:[/bold yellow]")
+    console.print("  [cyan]compare[/cyan]   - Show detailed comparison")
+    console.print("  [cyan]chromadb[/cyan]  - Local database (recommended)")
+    console.print("  [cyan]pinecone[/cyan]  - Cloud database")
+    console.print("  [cyan]weaviate[/cyan]  - Self-hosted/cloud database")
+    console.print("  [cyan]q[/cyan]         - 🚪 Back to main configuration menu")
+
     while True:
-        choice = Prompt.ask(
-            "\nChoose action",
-            choices=["compare", "chromadb", "pinecone", "weaviate", "back"],
-            default="chromadb"
-        )
+        try:
+            choice = Prompt.ask(
+                "\nChoose action",
+                choices=["compare", "chromadb", "pinecone", "weaviate", "q"],
+                default="chromadb"
+            )
+        except KeyboardInterrupt:
+            # Ctrl+C goes back to main configuration menu
+            return {}
 
         if choice == "compare":
             show_vector_db_comparison()
@@ -187,7 +567,7 @@ def configure_vector_database() -> Dict[str, Any]:
             return configure_pinecone()
         elif choice == "weaviate":
             return configure_weaviate()
-        elif choice == "back":
+        elif choice == "q":
             return {}
 
 
@@ -240,15 +620,19 @@ def configure_chromadb() -> Dict[str, Any]:
     console.print("2. [cyan]~/.easyprompt/chroma.db[/cyan] (user home)")
     console.print("3. [cyan]Custom path[/cyan]")
 
-    path_choice = Prompt.ask("Choose path option", choices=["1", "2", "3"], default="1")
+    try:
+        path_choice = Prompt.ask("Choose path option", choices=["1", "2", "3"], default="1")
 
-    if path_choice == "1":
-        config["VECTOR_DB_URL"] = "./data/chroma.db"
-    elif path_choice == "2":
-        config["VECTOR_DB_URL"] = "~/.easyprompt/chroma.db"
-    else:
-        custom_path = Prompt.ask("Enter custom path", default="./data/chroma.db")
-        config["VECTOR_DB_URL"] = custom_path
+        if path_choice == "1":
+            config["VECTOR_DB_URL"] = "./data/chroma.db"
+        elif path_choice == "2":
+            config["VECTOR_DB_URL"] = "~/.easyprompt/chroma.db"
+        else:
+            custom_path = Prompt.ask("Enter custom path", default="./data/chroma.db")
+            config["VECTOR_DB_URL"] = custom_path
+    except KeyboardInterrupt:
+        # Ctrl+C goes back to vector database menu
+        return {}
 
     console.print(f"\n[green]✅ ChromaDB will store data at: {config['VECTOR_DB_URL']}[/green]")
 
@@ -265,13 +649,17 @@ def configure_pinecone() -> Dict[str, Any]:
     console.print("• Environment name (from your Pinecone console)")
     console.print("• Index name (will be created if it doesn't exist)")
 
-    if not Confirm.ask("\nDo you have a Pinecone account and API key?"):
-        console.print("[yellow]ℹ️  Visit https://app.pinecone.io/ to create an account first[/yellow]")
-        return {}
+    try:
+        if not Confirm.ask("\nDo you have a Pinecone account and API key?"):
+            console.print("[yellow]ℹ️  Visit https://app.pinecone.io/ to create an account first[/yellow]")
+            return {}
 
-    config["PINECONE_API_KEY"] = Prompt.ask("Pinecone API key", password=True)
-    config["PINECONE_ENVIRONMENT"] = Prompt.ask("Pinecone environment (e.g., 'us-east1-aws')")
-    config["PINECONE_INDEX_NAME"] = Prompt.ask("Index name", default="easyprompt-index")
+        config["PINECONE_API_KEY"] = Prompt.ask("Pinecone API key", password=True)
+        config["PINECONE_ENVIRONMENT"] = Prompt.ask("Pinecone environment (e.g., 'us-east1-aws')")
+        config["PINECONE_INDEX_NAME"] = Prompt.ask("Index name", default="easyprompt-index")
+    except KeyboardInterrupt:
+        # Ctrl+C goes back to vector database menu
+        return {}
 
     console.print("\n[green]✅ Pinecone configured![/green]")
     return config
@@ -287,21 +675,229 @@ def configure_weaviate() -> Dict[str, Any]:
     console.print("2. [cyan]Weaviate Cloud[/cyan] (WCS)")
     console.print("3. [cyan]Custom Weaviate instance[/cyan]")
 
-    setup_choice = Prompt.ask("Choose setup", choices=["1", "2", "3"], default="1")
+    try:
+        setup_choice = Prompt.ask("Choose setup", choices=["1", "2", "3"], default="1")
 
-    if setup_choice == "1":
-        config["WEAVIATE_URL"] = "http://localhost:8080"
-        console.print("\n[yellow]ℹ️  Make sure to run Weaviate locally:[/yellow]")
-        console.print("docker run -p 8080:8080 semitechnologies/weaviate:latest")
-    elif setup_choice == "2":
-        config["WEAVIATE_URL"] = Prompt.ask("WCS cluster URL")
-        config["WEAVIATE_API_KEY"] = Prompt.ask("WCS API key", password=True)
-    else:
-        config["WEAVIATE_URL"] = Prompt.ask("Weaviate URL", default="http://localhost:8080")
-        if Confirm.ask("Does this instance require an API key?"):
-            config["WEAVIATE_API_KEY"] = Prompt.ask("API key", password=True)
+        if setup_choice == "1":
+            config["WEAVIATE_URL"] = "http://localhost:8080"
+            console.print("\n[yellow]ℹ️  Make sure to run Weaviate locally:[/yellow]")
+            console.print("docker run -p 8080:8080 semitechnologies/weaviate:latest")
+        elif setup_choice == "2":
+            config["WEAVIATE_URL"] = Prompt.ask("WCS cluster URL")
+            config["WEAVIATE_API_KEY"] = Prompt.ask("WCS API key", password=True)
+        else:
+            config["WEAVIATE_URL"] = Prompt.ask("Custom Weaviate URL", default="http://localhost:8080")
+    except KeyboardInterrupt:
+        # Ctrl+C goes back to vector database menu
+        return {}
 
+    console.print("\n[green]✅ Weaviate configured![/green]")
     return config
+
+
+def configure_embedding_model() -> Dict[str, Any]:
+    """Configure embedding model with detailed options and explanations."""
+    console.clear()
+    console.print(Panel(
+        "[bold]🔤 Embedding Model Configuration[/bold]",
+        style="blue"
+    ))
+
+    console.print("[bold blue]What is this?[/bold blue]")
+    console.print("• The embedding model converts text into numerical vectors for similarity search")
+    console.print("• This is the core of the RAG system - it determines how well documents are matched to queries")
+    console.print("• Different models have trade-offs between speed, accuracy, and memory usage")
+    console.print("• Better embeddings = more accurate CLI command generation")
+
+    console.print("\n[bold green]🏠 Local & Private:[/bold green]")
+    console.print("• All models run locally on your machine - no API calls for embeddings")
+    console.print("• Your documentation never leaves your system during embedding")
+    console.print("• Models downloaded once from HuggingFace, then cached locally")
+    console.print("• Works offline after initial download")
+
+    show_embedding_model_comparison()
+
+    console.print("\n[bold yellow]Model Options:[/bold yellow]")
+    console.print("1. [cyan]all-MiniLM-L6-v2[/cyan] - Recommended (fast, good quality, 22MB)")
+    console.print("2. [cyan]all-mpnet-base-v2[/cyan] - High accuracy (slower, excellent quality, 420MB)")
+    console.print("3. [cyan]all-MiniLM-L12-v2[/cyan] - Balanced (good speed, very good quality, 120MB)")
+    console.print("4. [cyan]paraphrase-multilingual[/cyan] - Multiple languages (slow, 970MB)")
+    console.print("5. [cyan]Custom model[/cyan] - Specify any HuggingFace model")
+
+    console.print("  q. 🚪 Back - Return to main configuration menu")
+
+    try:
+        choice = Prompt.ask(
+            "\nChoose model",
+            choices=["1", "2", "3", "4", "5", "q"],
+            default="1"
+        )
+    except KeyboardInterrupt:
+        # Ctrl+C goes back to main configuration menu
+        return {}
+
+    if choice == "1":
+        console.print("[green]✅ Using all-MiniLM-L6-v2 (recommended)[/green]")
+        return {"EMBEDDING_MODEL": "sentence-transformers/all-MiniLM-L6-v2"}
+    elif choice == "2":
+        console.print("[green]✅ Using all-mpnet-base-v2 (high accuracy)[/green]")
+        return {"EMBEDDING_MODEL": "sentence-transformers/all-mpnet-base-v2"}
+    elif choice == "3":
+        console.print("[green]✅ Using all-MiniLM-L12-v2 (balanced)[/green]")
+        return {"EMBEDDING_MODEL": "sentence-transformers/all-MiniLM-L12-v2"}
+    elif choice == "4":
+        console.print("[green]✅ Using multilingual model[/green]")
+        return {"EMBEDDING_MODEL": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"}
+    elif choice == "5":
+        return configure_custom_embedding()
+    elif choice == "q":
+        return {}
+    else:
+        return {}
+
+
+def show_embedding_model_comparison():
+    """Show simplified embedding model comparison."""
+    table = Table(title="🔤 Embedding Model Comparison", show_header=True)
+    table.add_column("Model", style="cyan")
+    table.add_column("Speed", style="yellow")
+    table.add_column("Quality", style="green")
+    table.add_column("Size", style="red")
+    table.add_column("Best For", style="blue")
+
+    table.add_row(
+        "all-MiniLM-L6-v2",
+        "⚡⚡⚡ Fastest",
+        "⭐⭐⭐ Good",
+        "22MB",
+        "General use, fast search"
+    )
+
+    table.add_row(
+        "all-mpnet-base-v2",
+        "⚡⚡ Fast",
+        "⭐⭐⭐⭐ Excellent",
+        "420MB",
+        "High accuracy, production"
+    )
+
+    table.add_row(
+        "all-MiniLM-L12-v2",
+        "⚡⚡ Fast",
+        "⭐⭐⭐⭐ Very Good",
+        "120MB",
+        "Balanced performance"
+    )
+
+    table.add_row(
+        "paraphrase-multilingual",
+        "⚡ Slower",
+        "⭐⭐⭐ Good",
+        "970MB",
+        "Multiple languages"
+    )
+
+    console.print(table)
+
+    console.print("\n[bold blue]💡 Key Info:[/bold blue]")
+    console.print("• All models run locally (private, no API calls)")
+    console.print("• Downloaded once from HuggingFace, then cached locally")
+    console.print("• Compatible with any LLM provider (OpenAI, Claude, Gemini)")
+
+
+def configure_recommended_embedding() -> Dict[str, Any]:
+    """Configure recommended embedding model."""
+    console.print("\n[bold green]✅ Recommended: all-MiniLM-L6-v2[/bold green]")
+    console.print("This is the best balance of speed, accuracy, and memory usage for CLI documentation.")
+
+    console.print("\n[bold]Model Details:[/bold]")
+    console.print("• [bold]Provider:[/bold] Microsoft Research")
+    console.print("• [bold]Type:[/bold] Local model (🏠 runs on your machine)")
+    console.print("• [bold]Speed:[/bold] Very fast (⚡⚡⚡) - ~0.1s per document")
+    console.print("• [bold]Accuracy:[/bold] Good (⭐⭐⭐) - excellent for CLI docs")
+    console.print("• [bold]Size:[/bold] Only 22MB download")
+    console.print("• [bold]Languages:[/bold] English optimized")
+    console.print("• [bold]Best for:[/bold] CLI commands, technical documentation, quick searches")
+
+    console.print("\n[bold cyan]📊 What to expect:[/bold cyan]")
+    console.print("• [bold]First use:[/bold] ~30s download from HuggingFace")
+    console.print("• [bold]Storage:[/bold] Cached in ~/.cache/huggingface/")
+    console.print("• [bold]Performance:[/bold] Near-instant embedding after download")
+    console.print("• [bold]Privacy:[/bold] No data sent to external servers")
+
+    if Confirm.ask("\nUse recommended model?", default=True):
+        console.print("[green]✅ Using sentence-transformers/all-MiniLM-L6-v2[/green]")
+        console.print("[dim]Model will download automatically on first use[/dim]")
+        return {"EMBEDDING_MODEL": "sentence-transformers/all-MiniLM-L6-v2"}
+
+    return {}
+
+
+def configure_fast_embedding() -> Dict[str, Any]:
+    """Configure fastest embedding model."""
+    console.print("\n[bold yellow]⚡ Fastest: all-MiniLM-L6-v2[/bold yellow]")
+    console.print("Optimized for speed with minimal memory usage.")
+
+    console.print("\n[bold]Why choose fast?[/bold]")
+    console.print("• Instant search responses")
+    console.print("• Low memory usage (22MB)")
+    console.print("• Good enough accuracy for most CLI tools")
+    console.print("• Works well on low-resource systems")
+
+    if Confirm.ask("\nUse fastest model?", default=True):
+        console.print("[green]✅ Using fastest model: all-MiniLM-L6-v2[/green]")
+        return {"EMBEDDING_MODEL": "sentence-transformers/all-MiniLM-L6-v2"}
+
+    return {}
+
+
+def configure_multilingual_embedding() -> Dict[str, Any]:
+    """Configure multilingual embedding model."""
+    console.print("\n[bold purple]🌍 Multilingual: paraphrase-multilingual-MiniLM-L12-v2[/bold purple]")
+    console.print("Supports multiple languages for international documentation.")
+
+    console.print("\n[bold]Model Details:[/bold]")
+    console.print("• [bold]Provider:[/bold] SentenceTransformers Team")
+    console.print("• [bold]Type:[/bold] Local model (🏠 runs on your machine)")
+    console.print("• [bold]Languages:[/bold] 50+ languages supported")
+    console.print("• [bold]Cross-lingual:[/bold] Query in English, find docs in other languages")
+    console.print("• [bold]Size:[/bold] 970MB download (much larger)")
+    console.print("• [bold]Speed:[/bold] Slower than English-only models")
+
+    console.print("\n[bold cyan]📊 What to expect:[/bold cyan]")
+    console.print("• [bold]Download time:[/bold] ~5-10 minutes depending on connection")
+    console.print("• [bold]Storage:[/bold] ~1GB disk space required")
+    console.print("• [bold]Performance:[/bold] 2-3x slower than English models")
+    console.print("• [bold]Use case:[/bold] Teams with documentation in multiple languages")
+
+    console.print("\n[bold yellow]⚠️  Important:[/bold yellow]")
+    console.print("• Only choose this if you have non-English documentation")
+    console.print("• For English-only CLI docs, stick with faster models")
+    console.print("• Requires more memory and processing power")
+
+    if Confirm.ask("\nUse multilingual model?", default=False):
+        console.print("[green]✅ Using multilingual model[/green]")
+        console.print("[dim]Large model - will take several minutes to download[/dim]")
+        return {"EMBEDDING_MODEL": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"}
+
+    return {}
+
+
+def configure_custom_embedding() -> Dict[str, Any]:
+    """Configure custom embedding model."""
+    console.print("\n[bold cyan]🛠️ Custom Embedding Model[/bold cyan]")
+    console.print("Enter any sentence-transformers model from HuggingFace.")
+
+    model_name = Prompt.ask(
+        "\nModel name (e.g., sentence-transformers/all-mpnet-base-v2)",
+        default="sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    if model_name:
+        console.print(f"[green]✅ Using custom model: {model_name}[/green]")
+        return {"EMBEDDING_MODEL": model_name}
+
+    return {}
 
 
 def configure_llm_providers() -> Dict[str, Any]:
@@ -351,19 +947,24 @@ def configure_llm_providers() -> Dict[str, Any]:
         console.print("  [cyan]remove[/cyan]   - Remove a provider")
         console.print("  [cyan]status[/cyan]   - Show detailed provider status")
         console.print("  [cyan]done[/cyan]     - Finish configuration")
+        console.print("  [cyan]q[/cyan]        - 🚪 Back to main configuration menu")
 
         if not has_valid_providers(config):
             console.print("\n[red]⚠️  You need at least one working provider![/red]")
             console.print("[yellow]💡 Try 'quick' for fast setup with recommended providers[/yellow]")
 
-        valid_choices = ["quick", "add", "test", "remove", "status", "done"]
+        valid_choices = ["quick", "add", "test", "remove", "status", "done", "q"]
         default_choice = "quick" if not has_valid_providers(config) else "done"
 
-        choice = Prompt.ask(
-            "\nChoose action",
-            choices=valid_choices,
-            default=default_choice
-        )
+        try:
+            choice = Prompt.ask(
+                "\nChoose action",
+                choices=valid_choices,
+                default=default_choice
+            )
+        except KeyboardInterrupt:
+            # Ctrl+C goes back to main configuration menu
+            return config
 
         if choice == "quick":
             result = quick_setup_flow()
@@ -390,7 +991,11 @@ def configure_llm_providers() -> Dict[str, Any]:
                     continue
             break
 
-        if choice != "done":
+        elif choice == "q":
+            # User chose to go back to main configuration menu
+            return config
+
+        if choice not in ["done", "q"]:
             console.input("\n[dim]Press Enter to continue...[/dim]")
 
     return config
@@ -478,11 +1083,17 @@ def offer_quick_setup() -> Dict[str, Any]:
     console.print("5. [cyan]All Providers[/cyan] - Maximum compatibility and redundancy")
     console.print("6. [cyan]Custom Setup[/cyan] - Configure providers individually")
 
-    choice = Prompt.ask(
-        "\nSetup option",
-        choices=["1", "2", "3", "4", "5", "6"],
-        default="1"
-    )
+    console.print("  q. 🚪 Back - Return to main configuration menu")
+
+    try:
+        choice = Prompt.ask(
+            "\nSetup option",
+            choices=["1", "2", "3", "4", "5", "6", "q"],
+            default="1"
+        )
+    except KeyboardInterrupt:
+        # Ctrl+C goes back to main configuration menu
+        return {}
 
     if choice == "1":
         return quick_setup_openai_only()
@@ -494,6 +1105,10 @@ def offer_quick_setup() -> Dict[str, Any]:
         return quick_setup_openai_claude()
     elif choice == "5":
         return quick_setup_all_providers()
+    elif choice == "6":
+        return configure_custom_llm_setup()
+    elif choice == "q":
+        return {}
     else:
         return {}
 
@@ -509,10 +1124,14 @@ def quick_setup_flow() -> Dict[str, Any]:
     console.print(f"\n[bold]Recommended setup:[/bold] {recommendations['title']}")
     console.print(f"[dim]{recommendations['description']}[/dim]")
 
-    if Confirm.ask(f"\nSet up {recommendations['title']}?", default=True):
-        return execute_quick_setup(recommendations['providers'])
-    else:
-        return add_provider_with_guidance()
+    try:
+        if Confirm.ask(f"\nSet up {recommendations['title']}?", default=True):
+            return execute_quick_setup(recommendations['providers'])
+        else:
+            return add_provider_with_guidance()
+    except KeyboardInterrupt:
+        # Ctrl+C goes back to main configuration menu
+        return {}
 
 
 def get_setup_recommendations() -> Dict[str, Any]:
@@ -968,6 +1587,14 @@ def show_detailed_provider_status(config: Dict[str, Any]):
 
 def test_provider_key(provider: str, api_key: str) -> bool:
     """Test if an API key works by making a simple request."""
+    import logging
+
+    # Suppress HTTP request logs during testing
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("anthropic").setLevel(logging.WARNING)
+    logging.getLogger("google.generativeai").setLevel(logging.WARNING)
+
     try:
         if provider == "gemini":
             return test_gemini_key(api_key)
@@ -1223,74 +1850,69 @@ def configure_anthropic_with_key() -> Dict[str, Any]:
         return {"ANTHROPIC_API_KEY": api_key}
 
 
-def configure_cli_tool() -> Dict[str, Any]:
-    """Configure CLI tool with clear explanation."""
+def configure_project_setup() -> Dict[str, Any]:
+    """Configure general project setup for RAG system."""
     console.clear()
     console.print(Panel(
-        "[bold]⚙️ CLI Tool Configuration[/bold]",
+        "[bold]📋 Project Setup[/bold]",
         style="yellow"
     ))
 
     console.print("[bold blue]What is this?[/bold blue]")
-    console.print("• This is the CLI tool you want EasyPrompt to help you with")
-    console.print("• Examples: kubectl, docker, git, aws, terraform, or any custom tool")
-    console.print("• The name is just an identifier - you can call it anything")
-    console.print("• EasyPrompt will generate commands for this tool based on your docs")
+    console.print("• This helps the RAG system understand your project context")
+    console.print("• Project name helps with relevant responses and context")
+    console.print("• Domain describes what type of documentation/knowledge you're working with")
+    console.print("• The system can help with ANY type of questions about your documentation")
 
-    show_cli_examples()
+    console.print("\n[bold green]📋 Examples of Project Types:[/bold green]")
+    examples = [
+        ("Kubernetes Deployment", "DevOps", "Help with K8s configs, troubleshooting, best practices"),
+        ("API Documentation", "Software Development", "Help with API usage, endpoints, examples"),
+        ("Product Manual", "Documentation", "Help users understand features and workflows"),
+        ("Internal Wiki", "Knowledge Base", "Answer questions about processes and procedures"),
+        ("Research Papers", "Academic", "Help understand concepts and methodologies"),
+        ("Technical Guides", "Engineering", "Help with implementation and troubleshooting")
+    ]
+
+    from rich.table import Table
+    examples_table = Table(title="🎯 Project Examples")
+    examples_table.add_column("Project Name", style="cyan")
+    examples_table.add_column("Domain", style="green")
+    examples_table.add_column("Use Case", style="blue")
+
+    for name, domain, use_case in examples:
+        examples_table.add_row(name, domain, use_case)
+
+    console.print(examples_table)
 
     config = {}
 
-    # Detect common tools for reference only
-    detected_tools = detect_available_tools()
-    if detected_tools:
-        console.print(f"\n[bold green]💡 Common tools detected on your system:[/bold green]")
-        console.print("[dim](These are just suggestions - you can use any name)[/dim]")
-        for tool in detected_tools:
-            console.print(f"  • {tool}")
-
-    # Simple tool name input with better UX
-    console.print("\n[bold]Enter your CLI tool details:[/bold]")
-    console.print("[dim]Tip: Use arrow keys to edit, Ctrl+C to cancel[/dim]")
+    console.print("\n[bold]Enter your project details:[/bold]")
+    console.print("[dim]These help provide better context to the LLM[/dim]")
 
     try:
-        # Use input() instead of Prompt.ask for better terminal support
-        tool_name = console.input("[bold cyan]CLI tool name[/bold cyan] (e.g., kubectl, my-tool): ").strip()
+        project_name = console.input("[bold cyan]Project name[/bold cyan] (e.g., 'Kubernetes Docs', 'API Guide'): ").strip()
 
-        if not tool_name:
-            console.print("[yellow]No tool name provided, skipping CLI tool configuration[/yellow]")
+        if not project_name:
+            console.print("[yellow]No project name provided, skipping project setup[/yellow]")
             return {}
 
-        config["CLI_TOOL_NAME"] = tool_name
-        console.print(f"[green]✅ CLI tool name set to: {tool_name}[/green]")
+        config["PROJECT_NAME"] = project_name
+        console.print(f"[green]✅ Project name set to: {project_name}[/green]")
 
-        # Optional path configuration
-        console.print(f"\n[bold]Optional: Specify path to {tool_name}[/bold]")
-        console.print("[dim]Leave empty to use system PATH[/dim]")
+        # Optional domain
+        console.print(f"\n[bold]Optional: Project domain/category[/bold]")
+        console.print("[dim]Helps the system understand the context (e.g., 'DevOps', 'API Documentation', 'User Manual')[/dim]")
 
-        # Try to auto-detect path
-        import shutil
-        auto_path = shutil.which(tool_name)
-        if auto_path:
-            console.print(f"[green]🔍 Found {tool_name} at: {auto_path}[/green]")
-            use_auto = Confirm.ask("Use this path?", default=True)
-            if use_auto:
-                config["CLI_TOOL_PATH"] = auto_path
-                console.print(f"[green]✅ Using detected path[/green]")
-            else:
-                custom_path = console.input("[cyan]Custom path[/cyan] (or press Enter to skip): ").strip()
-                if custom_path:
-                    config["CLI_TOOL_PATH"] = custom_path
-                    console.print(f"[green]✅ Using custom path: {custom_path}[/green]")
+        domain = console.input("[cyan]Domain/Category[/cyan] (or press Enter to skip): ").strip()
+        if domain:
+            config["PROJECT_DOMAIN"] = domain
+            console.print(f"[green]✅ Domain set to: {domain}[/green]")
         else:
-            console.print(f"[yellow]⚠️  {tool_name} not found in system PATH[/yellow]")
-            custom_path = console.input("[cyan]Full path to tool[/cyan] (or press Enter to skip): ").strip()
-            if custom_path:
-                config["CLI_TOOL_PATH"] = custom_path
-                console.print(f"[green]✅ Custom path set: {custom_path}[/green]")
+            console.print("[dim]Domain not set - system will work without it[/dim]")
 
     except KeyboardInterrupt:
-        console.print("\n[yellow]CLI tool configuration cancelled[/yellow]")
+        console.print("\n[yellow]Project setup cancelled[/yellow]")
         return {}
 
     return config
@@ -1336,51 +1958,203 @@ def detect_available_tools() -> List[str]:
     return detected
 
 
-def configure_documentation() -> Dict[str, Any]:
-    """Configure documentation sources with developer-friendly options."""
+def configure_documentation_files() -> Dict[str, Any]:
+    """Configure documentation file sources for RAG system."""
     console.clear()
     console.print(Panel(
-        "[bold]📚 Documentation Configuration[/bold]",
+        "[bold]📚 Documentation Files Configuration[/bold]",
         style="blue"
     ))
 
-    console.print("📖 EasyPrompt can index various documentation sources:")
-    console.print("• README files and markdown docs")
-    console.print("• Local documentation directories")
-    console.print("• Copy docs from other local repositories")
-    console.print("• Individual files and guides")
+    console.print("[bold blue]What is this?[/bold blue]")
+    console.print("• Configure where your documentation files are located")
+    console.print("• The RAG system will index these files for question answering")
+    console.print("• Works with any text-based documentation")
+
+    console.print("\n[bold green]📄 Supported File Types:[/bold green]")
+    file_types_table = Table(title="📁 File Type Support")
+    file_types_table.add_column("Type", style="cyan")
+    file_types_table.add_column("Extensions", style="green")
+    file_types_table.add_column("Use Cases", style="blue")
+
+    file_types_table.add_row(
+        "Markdown",
+        ".md, .markdown",
+        "Documentation, READMEs, guides"
+    )
+    file_types_table.add_row(
+        "Text Files",
+        ".txt",
+        "Plain text docs, notes"
+    )
+    file_types_table.add_row(
+        "PDF Documents",
+        ".pdf",
+        "Manuals, papers, reports"
+    )
+
+    console.print(file_types_table)
+
+    console.print("\n[bold yellow]📂 Setup Options:[/bold yellow]")
+    console.print("  [cyan]single[/cyan]   - Index all supported files in one folder")
+    console.print("  [cyan]multiple[/cyan] - Index files from multiple folders")
+    console.print("  [cyan]current[/cyan]  - Use docs in this project (./docs, ./README.md)")
+    console.print("  [cyan]q[/cyan]        - 🚪 Back to main configuration menu")
 
     config = {}
 
     # Check for existing documentation in current directory
     docs_found = find_documentation_sources()
-
-    console.print("\n[bold yellow]📂 Documentation Setup Options:[/bold yellow]")
-    console.print("1. [cyan]Use current directory docs[/cyan] - Index docs in this project")
-    console.print("2. [cyan]Copy from another project[/cyan] - Copy docs from a local repo")
-    console.print("3. [cyan]Custom paths[/cyan] - Specify custom documentation paths")
-    console.print("4. [cyan]Interactive builder[/cyan] - Step-by-step doc selection")
-
     if docs_found:
-        console.print(f"\n[bold green]📖 Auto-detected in current directory:[/bold green]")
+        console.print(f"\n[bold green]📖 Found in current directory:[/bold green]")
         for doc_type, path in docs_found:
             exists_indicator = "✅" if Path(path).exists() else "❌"
             console.print(f"  {exists_indicator} {doc_type}: [cyan]{path}[/cyan]")
 
-    setup_mode = Prompt.ask(
-        "\nChoose documentation setup",
-        choices=["current", "copy", "custom", "interactive"],
-        default="current" if docs_found else "interactive"
-    )
+    try:
+        setup_mode = Prompt.ask(
+            "\nChoose setup mode",
+            choices=["single", "multiple", "current", "q"],
+            default="current" if docs_found else "single"
+        )
+    except KeyboardInterrupt:
+        # Ctrl+C goes back to main configuration menu
+        return {}
 
     if setup_mode == "current":
-        return configure_current_directory_docs(docs_found)
-    elif setup_mode == "copy":
-        return configure_copy_from_repo()
-    elif setup_mode == "custom":
-        return configure_custom_docs()
-    else:  # interactive
-        return configure_docs_interactive(docs_found)
+        return configure_current_project_docs(docs_found)
+    elif setup_mode == "single":
+        return configure_single_directory_docs()
+    elif setup_mode == "multiple":
+        return configure_multiple_directories_docs()
+    elif setup_mode == "q":
+        return {}
+    else:
+        return {}
+
+
+def configure_current_project_docs(docs_found: List[tuple]) -> Dict[str, Any]:
+    """Configure using current project documentation."""
+    console.print("\n[bold green]📁 Using Current Project Documentation[/bold green]")
+
+    config = {
+        "DOCS_PATH": "./docs",
+        "SUPPORTED_FILE_TYPES": "md,txt,pdf"
+    }
+
+    if docs_found:
+        console.print("Will index the following:")
+        for doc_type, path in docs_found:
+            console.print(f"  ✅ {doc_type}: {path}")
+
+    console.print(f"\n[green]✅ Configuration set:[/green]")
+    console.print(f"  • Documentation folder: ./docs")
+    console.print(f"  • Supported file types: Markdown (.md), Text (.txt), PDF (.pdf)")
+    console.print(f"  • Will index all supported files in the docs folder")
+
+    return config
+
+
+def configure_single_directory_docs() -> Dict[str, Any]:
+    """Configure documentation from a single directory."""
+    console.print("\n[bold blue]📁 Single Directory Setup[/bold blue]")
+
+    try:
+        docs_path = console.input("[cyan]Documentation directory path[/cyan] (e.g., ./docs, /path/to/docs): ").strip()
+
+        if not docs_path:
+            console.print("[yellow]No path provided, using default ./docs[/yellow]")
+            docs_path = "./docs"
+
+        # Check if directory exists
+        path_obj = Path(docs_path)
+        if path_obj.exists():
+            # Count files by type (only in immediate directory, not recursive)
+            md_files = list(path_obj.glob("*.md"))
+            txt_files = list(path_obj.glob("*.txt"))
+            pdf_files = list(path_obj.glob("*.pdf"))
+
+            total_files = len(md_files) + len(txt_files) + len(pdf_files)
+            console.print(f"[green]📊 Found {total_files} files:[/green]")
+            console.print(f"  • Markdown: {len(md_files)} files")
+            console.print(f"  • Text: {len(txt_files)} files")
+            console.print(f"  • PDF: {len(pdf_files)} files")
+        else:
+            console.print(f"[yellow]⚠️  Directory doesn't exist yet: {docs_path}[/yellow]")
+            console.print("[dim]It will be created when you start indexing[/dim]")
+
+        config = {
+            "DOCS_PATH": docs_path,
+            "SUPPORTED_FILE_TYPES": "md,txt,pdf"
+        }
+
+        console.print(f"\n[green]✅ Single directory configured: {docs_path}[/green]")
+        return config
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Single directory setup cancelled[/yellow]")
+        return {}
+
+
+def configure_multiple_directories_docs() -> Dict[str, Any]:
+    """Configure documentation from multiple directories."""
+    console.print("\n[bold purple]📁 Multiple Directories Setup[/bold purple]")
+    console.print("Add multiple directories containing documentation files.")
+
+    directories = []
+
+    try:
+        while True:
+            if len(directories) == 0:
+                prompt_text = "[cyan]First documentation directory[/cyan]: "
+            else:
+                prompt_text = f"[cyan]Additional directory[/cyan] (or 'done' to finish): "
+
+            dir_path = console.input(prompt_text).strip()
+
+            if dir_path.lower() == 'done':
+                if len(directories) == 0:
+                    console.print("[yellow]At least one directory is required[/yellow]")
+                    continue
+                break
+
+            if not dir_path:
+                if len(directories) > 0:
+                    break
+                console.print("[yellow]Please enter a directory path[/yellow]")
+                continue
+
+            path_obj = Path(dir_path)
+            if path_obj.exists():
+                md_files = len(list(path_obj.glob("*.md")))
+                txt_files = len(list(path_obj.glob("*.txt")))
+                pdf_files = len(list(path_obj.glob("*.pdf")))
+                total = md_files + txt_files + pdf_files
+                console.print(f"  ✅ Added: {dir_path} ({total} files)")
+            else:
+                console.print(f"  ⚠️  Added: {dir_path} (directory will be created)")
+
+            directories.append(dir_path)
+
+        if directories:
+            # Join multiple directories with semicolon
+            docs_path = ";".join(directories)
+            config = {
+                "DOCS_PATH": docs_path,
+                "SUPPORTED_FILE_TYPES": "md,txt,pdf"
+            }
+
+            console.print(f"\n[green]✅ Multiple directories configured:[/green]")
+            for i, dir_path in enumerate(directories, 1):
+                console.print(f"  {i}. {dir_path}")
+
+            return config
+        else:
+            return {}
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Multiple directories setup cancelled[/yellow]")
+        return {}
 
 
 def configure_current_directory_docs(docs_found: List[tuple]) -> Dict[str, Any]:
@@ -1664,49 +2438,55 @@ def configure_advanced_settings() -> Dict[str, Any]:
 
     show_advanced_help()
 
-    if not Confirm.ask("Configure advanced settings?", default=False):
+    try:
+        if not Confirm.ask("Configure advanced settings?", default=False):
+            return {}
+
+        config = {}
+
+        # Performance settings
+        console.print("\n[bold blue]⚡ Performance Settings[/bold blue]")
+
+        config["MAX_CONTEXT_LENGTH"] = Prompt.ask(
+            "Max context length (tokens sent to LLM)",
+            default="4000"
+        )
+
+        config["TOP_K_RESULTS"] = Prompt.ask(
+            "Top K results (number of similar docs to retrieve)",
+            default="5"
+        )
+
+        config["SIMILARITY_THRESHOLD"] = Prompt.ask(
+            "Similarity threshold (0.0-1.0, higher = more strict)",
+            default="0.7"
+        )
+
+        # Behavior settings
+        console.print("\n[bold yellow]🎭 Behavior Settings[/bold yellow]")
+
+        config["DRY_RUN"] = "true" if Confirm.ask(
+            "Enable dry run by default? (show commands without executing)",
+            default=False
+        ) else "false"
+
+        config["CONFIRM_BEFORE_EXECUTION"] = "true" if Confirm.ask(
+            "Always confirm before executing commands?",
+            default=True
+        ) else "false"
+
+        config["LOG_LEVEL"] = Prompt.ask(
+            "Log level",
+            choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+            default="INFO"
+        )
+
+        return config
+
+    except KeyboardInterrupt:
+        # Ctrl+C goes back to main configuration menu
+        console.print("\n[yellow]Advanced settings configuration cancelled[/yellow]")
         return {}
-
-    config = {}
-
-    # Performance settings
-    console.print("\n[bold blue]⚡ Performance Settings[/bold blue]")
-
-    config["MAX_CONTEXT_LENGTH"] = Prompt.ask(
-        "Max context length (tokens sent to LLM)",
-        default="4000"
-    )
-
-    config["TOP_K_RESULTS"] = Prompt.ask(
-        "Top K results (number of similar docs to retrieve)",
-        default="5"
-    )
-
-    config["SIMILARITY_THRESHOLD"] = Prompt.ask(
-        "Similarity threshold (0.0-1.0, higher = more strict)",
-        default="0.7"
-    )
-
-    # Behavior settings
-    console.print("\n[bold yellow]🎭 Behavior Settings[/bold yellow]")
-
-    config["DRY_RUN"] = "true" if Confirm.ask(
-        "Enable dry run by default? (show commands without executing)",
-        default=False
-    ) else "false"
-
-    config["CONFIRM_BEFORE_EXECUTION"] = "true" if Confirm.ask(
-        "Always confirm before executing commands?",
-        default=True
-    ) else "false"
-
-    config["LOG_LEVEL"] = Prompt.ask(
-        "Log level",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO"
-    )
-
-    return config
 
 
 def show_advanced_help():
@@ -1750,9 +2530,10 @@ def show_configuration_overview(config: Dict[str, Any]):
     # Group by category
     categories = {
         "🗄️ Vector Database": ["VECTOR_DB_TYPE", "VECTOR_DB_URL", "PINECONE_API_KEY", "PINECONE_ENVIRONMENT", "PINECONE_INDEX_NAME", "WEAVIATE_URL", "WEAVIATE_API_KEY"],
+        "🔤 Embedding Model": ["EMBEDDING_MODEL"],
         "🤖 LLM Providers": ["GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
-        "⚙️ CLI Tool": ["CLI_TOOL_NAME", "CLI_TOOL_PATH"],
-        "📚 Documentation": ["DOCS_PATH", "README_PATH", "ADDITIONAL_DOCS"],
+        "📋 Project": ["PROJECT_NAME", "PROJECT_DOMAIN"],
+        "📚 Documentation": ["DOCS_PATH", "SUPPORTED_FILE_TYPES"],
         "🎛️ Advanced": ["MAX_CONTEXT_LENGTH", "TOP_K_RESULTS", "SIMILARITY_THRESHOLD", "DRY_RUN", "CONFIRM_BEFORE_EXECUTION", "LOG_LEVEL"]
     }
 
@@ -1843,15 +2624,20 @@ def validate_configuration(config: Dict[str, Any]) -> List[str]:
         if "PINECONE_API_KEY" not in config:
             issues.append("Pinecone selected but no API key provided")
 
-    # Check CLI tool
-    if "CLI_TOOL_NAME" not in config:
-        issues.append("No CLI tool specified")
-
     # Check documentation
-    if "README_PATH" not in config and "DOCS_PATH" not in config:
+    if "DOCS_PATH" not in config:
         issues.append("No documentation sources configured")
 
     return issues
+
+
+def auto_save_config(config: Dict[str, Any], env_file: Path) -> None:
+    """Auto-save configuration after each section without validation prompts."""
+    try:
+        write_env_file(env_file, config)
+        console.print(f"[dim]✅ Configuration saved automatically[/dim]")
+    except Exception as e:
+        console.print(f"[yellow]⚠️  Could not auto-save: {e}[/yellow]")
 
 
 def validate_and_save_config(config: Dict[str, Any], env_file: Path) -> bool:
@@ -1926,14 +2712,13 @@ def write_env_file(env_file: Path, config: dict):
             "Embedding Model": {
                 "EMBEDDING_MODEL": (config.get("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"), "Sentence transformer model for embeddings")
             },
-            "CLI Tool": {
-                "CLI_TOOL_NAME": (config.get("CLI_TOOL_NAME", ""), "Name of your CLI tool (required)"),
-                "CLI_TOOL_PATH": (config.get("CLI_TOOL_PATH", ""), "Full path to CLI tool (optional)")
+            "Project Setup": {
+                "PROJECT_NAME": (config.get("PROJECT_NAME", ""), "Project name for context (optional)"),
+                "PROJECT_DOMAIN": (config.get("PROJECT_DOMAIN", ""), "Project domain/category (optional)")
             },
-            "Documentation": {
-                "DOCS_PATH": (config.get("DOCS_PATH", "./docs"), "Documentation directory path"),
-                "README_PATH": (config.get("README_PATH", "./README.md"), "README file path"),
-                "ADDITIONAL_DOCS": (config.get("ADDITIONAL_DOCS", ""), "Additional docs (comma-separated)")
+            "Documentation Files": {
+                "DOCS_PATH": (config.get("DOCS_PATH", "./docs"), "Documentation directory path(s) - use semicolon for multiple"),
+                "SUPPORTED_FILE_TYPES": (config.get("SUPPORTED_FILE_TYPES", "md,txt,pdf"), "Supported file extensions (comma-separated)")
             },
             "LLM Providers": llm_providers,
             "Pinecone Settings": {
@@ -2059,3 +2844,78 @@ def show_next_steps(config: dict):
 
     console.print(f"\n[dim]Configuration saved to .env[/dim]")
     console.print(f"[dim]You can edit .env manually anytime to change settings[/dim]")
+
+
+def configure_index_settings() -> Dict[str, Any]:
+    """Configure indexing settings with simple choices."""
+    console.clear()
+    console.print(Panel(
+        "[bold]⚙️ Index Settings Configuration[/bold]",
+        style="blue"
+    ))
+
+    console.print("[bold blue]Index settings control how documents are processed for search.[/bold blue]")
+    console.print("Configure chunking strategy, storage paths, and processing options.")
+
+    # Load current settings to show current choice
+    current_config = load_existing_env_file()
+    current_strategy = current_config.get("CHUNKING_STRATEGY", "recursive")
+    current_chunk_size = current_config.get("CHUNK_SIZE", "1000")
+    current_overlap = current_config.get("CHUNK_OVERLAP", "200")
+
+    # Show current settings
+    console.print(f"\n[bold green]📋 Current Settings:[/bold green]")
+    console.print(f"• Chunking Strategy: [yellow]{current_strategy.title()}[/yellow]")
+    console.print(f"• Chunk Size: [yellow]{current_chunk_size}[/yellow] characters")
+    console.print(f"• Chunk Overlap: [yellow]{current_overlap}[/yellow] characters")
+
+    console.print("\n[bold yellow]Chunking Strategy Options:[/bold yellow]")
+    # Highlight current choice
+    strategies = [
+        ("1", "Recursive", "Smart hierarchical splitting (recommended)"),
+        ("2", "Fixed Size", "Simple fixed-length chunks"),
+        ("3", "Sentence", "Split by sentence boundaries"),
+        ("4", "Paragraph", "Split by paragraph boundaries")
+    ]
+
+    for num, name, desc in strategies:
+        if name.lower().replace(" ", "") == current_strategy.replace("_", ""):
+            console.print(f"{num}. [bold green]{name}[/bold green] - {desc} [green]← Current[/green]")
+        else:
+            console.print(f"{num}. [cyan]{name}[/cyan] - {desc}")
+
+    console.print("  q. 🚪 Back - Return to main configuration menu")
+
+    try:
+        choice = Prompt.ask(
+            "\nChoose chunking strategy",
+            choices=["1", "2", "3", "4", "q"],
+            default="1"
+        )
+    except KeyboardInterrupt:
+        return {}
+
+    if choice == "q":
+        return {}
+
+    # Map choices to strategy names
+    strategy_map = {
+        "1": "recursive",
+        "2": "fixed",
+        "3": "sentence",
+        "4": "paragraph"
+    }
+
+    strategy = strategy_map.get(choice, "recursive")
+    console.print(f"[green]✅ Using {strategy} chunking strategy[/green]")
+
+    return {
+        "CHUNKING_STRATEGY": strategy,
+        "CHUNK_SIZE": "1000",
+        "CHUNK_OVERLAP": "200",
+        "INDEX_STORAGE_PATH": "./data/index",
+        "CHUNKED_DOCS_PATH": "./data/chunked_docs",
+        "ENABLE_METADATA_EXTRACTION": "true",
+        "MIN_CHUNK_SIZE": "100"
+    }
+

@@ -20,14 +20,25 @@ class Settings(BaseSettings):
     )
     embedding_dimension: int = Field(default=384, description="Embedding vector dimension")
 
-    # CLI Tool Settings
-    cli_tool_name: str = Field(default="", description="Name of the CLI tool")
-    cli_tool_path: str = Field(default="", description="Path to the CLI tool executable")
+    # Project Settings
+    project_name: str = Field(default="", description="Name of the project")
+    project_domain: str = Field(default="", description="Domain/category of the project")
 
-    # Documentation Paths
-    docs_path: str = Field(default="./docs", description="Path to documentation directory")
-    readme_path: str = Field(default="./README.md", description="Path to README file")
-    additional_docs: str = Field(default="", description="Comma-separated list of additional docs")
+    # Legacy CLI Tool (kept for compatibility)
+    cli_tool_name: str = Field(default="bash", description="CLI tool name for command generation")
+
+    # Documentation Settings
+    docs_path: str = Field(default="./docs", description="Path to documentation directory(s) - semicolon separated for multiple")
+    supported_file_types: str = Field(default="md,txt,pdf", description="Supported file extensions (comma-separated)")
+
+    # Index Settings
+    chunk_size: int = Field(default=1000, description="Size of text chunks for indexing")
+    chunk_overlap: int = Field(default=200, description="Overlap between consecutive chunks")
+    chunking_strategy: str = Field(default="recursive", description="Text chunking strategy")
+    index_storage_path: str = Field(default="./data/index", description="Path to store index data")
+    chunked_docs_path: str = Field(default="./data/chunked_docs", description="Path to store chunked documents")
+    enable_metadata_extraction: bool = Field(default=True, description="Extract metadata from documents")
+    min_chunk_size: int = Field(default=100, description="Minimum size for a valid chunk")
 
     # LLM Provider API Keys
     gemini_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
@@ -59,11 +70,18 @@ class Settings(BaseSettings):
         case_sensitive = False
 
     @property
-    def additional_docs_list(self) -> List[str]:
-        """Get additional docs as a list."""
-        if not self.additional_docs:
+    def supported_file_types_list(self) -> List[str]:
+        """Get supported file types as a list."""
+        if not self.supported_file_types:
             return []
-        return [doc.strip() for doc in self.additional_docs.split(",") if doc.strip()]
+        return [ext.strip() for ext in self.supported_file_types.split(",") if ext.strip()]
+
+    @property
+    def docs_path_list(self) -> List[str]:
+        """Get documentation paths as a list."""
+        if not self.docs_path:
+            return []
+        return [path.strip() for path in self.docs_path.split(";") if path.strip()]
 
     @property
     def available_llm_providers(self) -> List[str]:

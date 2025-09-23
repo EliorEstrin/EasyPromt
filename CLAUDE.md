@@ -438,3 +438,12 @@ easyprompt --help               # Test CLI
 8. **CLI testing**: Interactive commands (`easyprompt chat`) are best for manual testing
 
 The codebase uses async/await throughout, Rich for CLI output, and maintains strict type safety with mypy.
+
+## Git Workflow
+
+Current git status shows modified file: `easyprompt/cli/init_command.py`. The main branch is `main`.
+
+When making changes:
+1. Always commit changes with descriptive messages
+2. Use `git status` and `git diff` to review changes before committing
+3. Test thoroughly before pushing to main branch

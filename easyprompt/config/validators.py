@@ -19,7 +19,7 @@ class ConfigValidator:
 
         self._validate_vector_db()
         self._validate_embedding_model()
-        self._validate_cli_tool()
+        self._validate_project_setup()
         self._validate_documentation_paths()
         self._validate_llm_providers()
 
@@ -49,30 +49,21 @@ class ConfigValidator:
         if self.settings.embedding_dimension <= 0:
             self.errors.append("Embedding dimension must be positive")
 
-    def _validate_cli_tool(self) -> None:
-        """Validate CLI tool configuration."""
-        if not self.settings.cli_tool_name:
-            self.errors.append("CLI tool name must be specified")
-
-        if self.settings.cli_tool_path and not Path(self.settings.cli_tool_path).exists():
-            self.errors.append(f"CLI tool path does not exist: {self.settings.cli_tool_path}")
+    def _validate_project_setup(self) -> None:
+        """Validate project setup configuration."""
+        # Project name and domain are optional
+        pass
 
     def _validate_documentation_paths(self) -> None:
         """Validate documentation paths."""
-        paths_to_check = [
-            ("docs_path", self.settings.docs_path),
-            ("readme_path", self.settings.readme_path),
-        ]
-
-        for name, path in paths_to_check:
+        # Validate each documentation path
+        for path in self.settings.docs_path_list:
             if path and not Path(path).exists():
-                self.errors.append(f"{name} does not exist: {path}")
+                self.errors.append(f"Documentation path does not exist: {path}")
 
-        # Check additional docs
-        for doc in self.settings.additional_docs_list:
-            doc_path = Path(doc)
-            if not doc_path.exists():
-                self.errors.append(f"Additional documentation file does not exist: {doc}")
+        # Validate supported file types
+        if not self.settings.supported_file_types:
+            self.errors.append("At least one supported file type must be specified")
 
     def _validate_llm_providers(self) -> None:
         """Validate LLM provider configuration."""
