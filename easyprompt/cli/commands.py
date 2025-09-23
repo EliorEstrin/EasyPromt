@@ -94,6 +94,39 @@ class QueryCommand(BaseCommand):
         """Run the query command."""
         self.run_async(self._async_run(query_text, execute, dry_run, alternatives, explain, provider))
 
+    def _is_qa_request(self, query_text: str) -> bool:
+        """Determine if the query is a Q&A request vs a command generation request."""
+        # Question patterns
+        question_starters = [
+            'what', 'how', 'why', 'when', 'where', 'who', 'which', 'can you tell me',
+            'tell me about', 'explain', 'describe', 'show me about', 'help me understand'
+        ]
+
+        # Command patterns
+        command_patterns = [
+            'run', 'execute', 'start', 'stop', 'install', 'create', 'delete', 'remove',
+            'copy', 'move', 'list files', 'find files', 'search for', 'download', 'upload'
+        ]
+
+        query_lower = query_text.lower().strip()
+
+        # Check for question indicators
+        if query_lower.endswith('?'):
+            return True
+
+        # Check for question starters
+        for starter in question_starters:
+            if query_lower.startswith(starter):
+                return True
+
+        # Check for command patterns (if found, likely not Q&A)
+        for pattern in command_patterns:
+            if pattern in query_lower:
+                return False
+
+        # Default: if unclear, treat as Q&A since that's what the UI promises
+        return True
+
     async def _async_run(
         self,
         query_text: str,
@@ -115,13 +148,23 @@ class QueryCommand(BaseCommand):
 
             await processor.initialize()
 
-            if alternatives > 0:
+            # Detect if this is a Q&A request or command generation request
+            is_qa = self._is_qa_request(query_text)
+
+            if is_qa:
+                # Process as documentation Q&A
+                result = await processor.process_qa_query(query_text)
+                progress.update(task, description="Query processed!", completed=True)
+                self._display_qa_result(result)
+            elif alternatives > 0:
+                # Process as command generation with alternatives
                 result = await processor.process_query_with_alternatives(
                     query_text, num_alternatives=alternatives, include_explanation=explain
                 )
                 progress.update(task, description="Query processed!", completed=True)
                 self._display_alternatives_result(result)
             else:
+                # Process as single command generation
                 result = await processor.process_query(
                     query_text, include_explanation=explain
                 )
@@ -227,6 +270,27 @@ class QueryCommand(BaseCommand):
         except Exception as e:
             self.console.print(f"[red]Failed to execute command:[/red] {e}")
 
+    def _display_qa_result(self, result):
+        """Display the result of a Q&A query."""
+        if not result["success"]:
+            self.console.print(f"[red]Query failed:[/red] {result['answer']}")
+            return
+
+        # Display the answer in a nice panel
+        self.console.print(Panel(
+            result["answer"],
+            title="📖 Answer",
+            style="green"
+        ))
+
+        # Show context information
+        context_info = f"Used {len(result['context_used'])} context chunks from {len(result['files_used'])} files"
+        self.console.print(f"\n[dim]{context_info}[/dim]")
+
+        # Show processing time
+        if result.get("processing_time"):
+            self.console.print(f"[dim]⏱️ Processed in {result['processing_time']:.2f}s[/dim]")
+
 
 class ChatCommand(BaseCommand):
     """Interactive chat session."""
@@ -302,6 +366,11 @@ class StatusCommand(BaseCommand):
 
     async def _async_run(self, verbose: bool):
         """Async implementation of status command."""
+        # Temporarily suppress logs for cleaner UX
+        import logging
+        original_level = logging.getLogger().level
+        logging.getLogger().setLevel(logging.ERROR)
+
         processor = QueryProcessor(self.settings)
 
         with Progress(
@@ -325,6 +394,9 @@ class StatusCommand(BaseCommand):
         if processor._initialized:
             await processor.close()
 
+        # Restore original logging level after cleanup
+        logging.getLogger().setLevel(original_level)
+
     def _display_status(self, status: dict, verbose: bool):
         """Display system status."""
         table = Table(title="EasyPrompt System Status")
@@ -339,7 +411,6 @@ class StatusCommand(BaseCommand):
 
         # Basic status
         table.add_row("Initialization", "✅ Ready" if status.get("initialized") else "❌ Not Ready", "")
-        table.add_row("CLI Tool", status.get("cli_tool", "Not configured"), "")
         table.add_row("Embedding Model", status.get("embedding_model", "Not configured"), "")
         table.add_row("Vector Database", status.get("vector_db_type", "Not configured"), "")
 

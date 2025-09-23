@@ -145,9 +145,10 @@ class DocumentIndexer:
         if self.settings.docs_path:
             paths.append(self.settings.docs_path)
 
-        # Add additional docs
-        for doc in self.settings.additional_docs_list:
-            paths.append(doc)
+        # Add additional docs from docs_path_list
+        for doc in self.settings.docs_path_list:
+            if doc != self.settings.docs_path:  # Avoid duplicates
+                paths.append(doc)
 
         return [path for path in paths if path]
 

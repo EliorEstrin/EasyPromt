@@ -24,11 +24,9 @@ class Settings(BaseSettings):
     project_name: str = Field(default="", description="Name of the project")
     project_domain: str = Field(default="", description="Domain/category of the project")
 
-    # Legacy CLI Tool (kept for compatibility)
-    cli_tool_name: str = Field(default="bash", description="CLI tool name for command generation")
-
     # Documentation Settings
     docs_path: str = Field(default="./docs", description="Path to documentation directory(s) - semicolon separated for multiple")
+    readme_path: Optional[str] = Field(default="", description="Path to README file (optional)")
     supported_file_types: str = Field(default="md,txt,pdf", description="Supported file extensions (comma-separated)")
 
     # Index Settings

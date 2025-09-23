@@ -60,13 +60,10 @@ def is_config_usable(config: Dict[str, str]) -> bool:
         for key in ["GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
     )
 
-    # Check for CLI tool name
-    has_cli_tool = config.get("CLI_TOOL_NAME") and len(config["CLI_TOOL_NAME"]) > 0
-
     # Check for vector DB type
     has_vector_db = config.get("VECTOR_DB_TYPE") and config["VECTOR_DB_TYPE"] in ["chromadb", "pinecone", "weaviate"]
 
-    return has_llm and has_cli_tool and has_vector_db
+    return has_llm and has_vector_db
 
 
 def show_existing_config_status(config: Dict[str, str]):
@@ -83,7 +80,6 @@ def show_existing_config_status(config: Dict[str, str]):
 
     # Analyze configuration
     vector_db = config.get("VECTOR_DB_TYPE", "Not configured")
-    cli_tool = config.get("CLI_TOOL_NAME", "Not configured")
 
     # Count configured LLM providers
     llm_providers = []
@@ -109,14 +105,10 @@ def show_existing_config_status(config: Dict[str, str]):
         console.print("  1. Edit .env file and replace placeholder API keys with real ones")
         console.print("  2. Run: [cyan]easyprompt index[/cyan] to index your documentation")
         console.print("  3. Try: [cyan]easyprompt query \"your request\"[/cyan]")
-    elif cli_tool == "Not configured":
-        console.print("  1. Edit .env file and set CLI_TOOL_NAME")
-        console.print("  2. Run: [cyan]easyprompt index[/cyan] to index your documentation")
-        console.print("  3. Try: [cyan]easyprompt query \"your request\"[/cyan]")
     else:
         console.print("  1. Run: [cyan]easyprompt index[/cyan] to index your documentation")
         console.print("  2. Try: [cyan]easyprompt query \"your request\"[/cyan]")
-        console.print("  3. Start interactive mode: [cyan]easyprompt chat[/cyan]")
+        console.print("  3. Start interactive mode: [cyan]easyprompt[/cyan]")
 
     console.print(f"\n[dim]To reconfigure completely, use: easyprompt init --force[/dim]")
 
@@ -2810,9 +2802,6 @@ def show_next_steps(config: dict):
     if llm_providers:
         configured_items.append(f"✅ LLM Providers: {', '.join(llm_providers)}")
 
-    if config.get("CLI_TOOL_NAME"):
-        configured_items.append(f"✅ CLI Tool: {config['CLI_TOOL_NAME']}")
-
     if configured_items:
         console.print("\n[bold]What you configured:[/bold]")
         for item in configured_items:
@@ -2821,13 +2810,10 @@ def show_next_steps(config: dict):
     # Next steps
     next_steps = []
 
-    if config.get("CLI_TOOL_NAME"):
-        next_steps.append(f"1. Ensure '[cyan]{config['CLI_TOOL_NAME']}[/cyan]' is installed and accessible")
-
     # Check if we need full dependencies
     needs_full = config.get("VECTOR_DB_TYPE") in ["pinecone", "weaviate"] or config.get("EMBEDDING_MODEL")
     if needs_full:
-        next_steps.append("2. Install full dependencies: '[cyan]pip install -e \".[full]\"[/cyan]'")
+        next_steps.append("1. Install full dependencies: '[cyan]pip install -e \".[full]\"[/cyan]'")
 
     next_steps.extend([
         f"{len(next_steps) + 1}. Index your documentation: '[cyan]easyprompt index[/cyan]'",

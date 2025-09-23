@@ -3,6 +3,7 @@
 import asyncio
 import tempfile
 import pytest
+import os
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock
 import numpy as np
@@ -20,16 +21,20 @@ def temp_dir():
 @pytest.fixture
 def sample_settings(temp_dir):
     """Create sample settings for testing."""
+    import os
+
+    # Use real OpenAI key if available in environment, otherwise use mock key
+    openai_key = os.getenv("OPENAI_API_KEY", "test-openai-key")
+
     return Settings(
         vector_db_type="chromadb",
         vector_db_url=str(temp_dir / "test.db"),
         embedding_model="sentence-transformers/all-MiniLM-L6-v2",
         embedding_dimension=384,
-        cli_tool_name="test-cli",
-        cli_tool_path="/usr/bin/test-cli",
         docs_path=str(temp_dir / "docs"),
         readme_path=str(temp_dir / "README.md"),
-        gemini_api_key="test-gemini-key",
+        openai_api_key=openai_key,
+        # Don't include other provider keys - let tests skip if not available
         max_context_length=1000,
         top_k_results=3,
         similarity_threshold=0.5,
@@ -264,3 +269,20 @@ def mock_subprocess_run():
         mock_run.return_value.stdout = "Command executed successfully"
         mock_run.return_value.stderr = ""
         yield mock_run
+
+
+# Skip markers for LLM provider tests
+skip_if_no_openai = pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OpenAI API key not available"
+)
+
+skip_if_no_gemini = pytest.mark.skipif(
+    not os.getenv("GEMINI_API_KEY"),
+    reason="Gemini API key not available"
+)
+
+skip_if_no_anthropic = pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"),
+    reason="Anthropic API key not available"
+)

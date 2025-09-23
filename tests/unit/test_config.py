@@ -41,23 +41,22 @@ class TestSettings:
 
             assert settings.vector_db_type == "pinecone"
             assert settings.vector_db_url == "custom-url"
-            assert settings.cli_tool_name == "kubectl"
             assert settings.gemini_api_key == "test-key"
             assert settings.top_k_results == 10
             assert settings.dry_run is True
 
-    def test_additional_docs_list(self):
-        """Test additional_docs_list property."""
-        settings = Settings(additional_docs="doc1.md,doc2.md, doc3.md")
+    def test_docs_path_list(self):
+        """Test docs_path_list property."""
+        settings = Settings(docs_path="doc1.md;doc2.md; doc3.md")
 
-        docs_list = settings.additional_docs_list
+        docs_list = settings.docs_path_list
         assert docs_list == ["doc1.md", "doc2.md", "doc3.md"]
 
-    def test_additional_docs_list_empty(self):
-        """Test additional_docs_list with empty string."""
-        settings = Settings(additional_docs="")
+    def test_docs_path_list_empty(self):
+        """Test docs_path_list with empty string."""
+        settings = Settings(docs_path="")
 
-        docs_list = settings.additional_docs_list
+        docs_list = settings.docs_path_list
         assert docs_list == []
 
     def test_available_llm_providers(self):
@@ -78,7 +77,12 @@ class TestSettings:
         settings = Settings(gemini_api_key="key1")
         assert settings.primary_llm_provider == "gemini"
 
-        settings = Settings()
+        # Test with no API keys - use explicit None values to override .env
+        settings = Settings(
+            openai_api_key=None,
+            gemini_api_key=None,
+            anthropic_api_key=None
+        )
         assert settings.primary_llm_provider is None
 
 
@@ -135,26 +139,6 @@ class TestConfigValidator:
 
         errors = validator.get_validation_errors()
         assert any("Embedding dimension must be positive" in error for error in errors)
-
-    def test_validate_cli_tool_empty_name(self, sample_settings):
-        """Test validation with empty CLI tool name."""
-        sample_settings.cli_tool_name = ""
-
-        validator = ConfigValidator(sample_settings)
-        assert validator.validate_all() is False
-
-        errors = validator.get_validation_errors()
-        assert any("CLI tool name must be specified" in error for error in errors)
-
-    def test_validate_cli_tool_invalid_path(self, sample_settings):
-        """Test validation with invalid CLI tool path."""
-        sample_settings.cli_tool_path = "/nonexistent/path"
-
-        validator = ConfigValidator(sample_settings)
-        assert validator.validate_all() is False
-
-        errors = validator.get_validation_errors()
-        assert any("CLI tool path does not exist" in error for error in errors)
 
     def test_validate_documentation_paths_missing(self, sample_settings):
         """Test validation with missing documentation paths."""

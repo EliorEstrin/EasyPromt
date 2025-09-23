@@ -168,12 +168,12 @@ class TextChunker:
         sentences = re.split(r"(?<=[.!?])\s+", overlap_text)
         if len(sentences) > 1:
             # Keep complete sentences
-            return " ".join(sentences[1:]) + " "
+            return " ".join(sentences[1:])
 
         # If no sentence boundary, use word boundary
         words = overlap_text.split()
         if len(words) > 1:
-            return " ".join(words[len(words) // 2 :]) + " "
+            return " ".join(words[len(words) // 2 :])
 
         return overlap_text
 

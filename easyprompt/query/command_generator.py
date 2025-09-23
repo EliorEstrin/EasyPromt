@@ -40,7 +40,6 @@ class CommandGenerator:
             response = await self.provider.generate_command(
                 user_query=user_query,
                 context=context,
-                cli_tool_name=self.settings.cli_tool_name,
                 **kwargs
             )
 
@@ -75,7 +74,6 @@ class CommandGenerator:
             command, explanation = await self.provider.generate_command_with_explanation(
                 user_query=user_query,
                 context=context,
-                cli_tool_name=self.settings.cli_tool_name,
                 **kwargs
             )
 
@@ -290,6 +288,24 @@ Explain what changes were made and why.
             "model": self.provider.default_model,
             "status": "ready"
         }
+
+    async def generate_answer(
+        self,
+        user_query: str,
+        context: str
+    ) -> str:
+        """Generate an answer to a documentation question."""
+        if not self.provider:
+            await self.initialize()
+
+        try:
+            answer = await self.provider.generate_answer(user_query, context)
+            logger.info(f"Generated answer for documentation query")
+            return answer
+
+        except Exception as e:
+            logger.error(f"Failed to generate answer: {e}")
+            raise
 
     async def close(self) -> None:
         """Close the command generator."""

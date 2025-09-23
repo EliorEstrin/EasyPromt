@@ -42,25 +42,18 @@ class ChromaDBAdapter(BaseVectorDB):
             db_dir = Path(self.db_path).parent
             db_dir.mkdir(parents=True, exist_ok=True)
 
-            # Initialize ChromaDB client
-            chroma_settings = ChromaSettings(
-                persist_directory=str(db_dir),
-                anonymized_telemetry=False
+            logger.info(f"Initializing ChromaDB with path: {db_dir}")
+            logger.info(f"Collection name: {self.collection_name}")
+
+            # Initialize ChromaDB client with PersistentClient
+            self.client = chromadb.PersistentClient(path=str(db_dir))
+
+            # Get or create collection - use get_or_create_collection for simplicity
+            self.collection = self.client.get_or_create_collection(
+                name=self.collection_name,
+                metadata={"description": "EasyPrompt document embeddings"}
             )
-
-            self.client = chromadb.Client(chroma_settings)
-
-            # Get or create collection
-            try:
-                self.collection = self.client.get_collection(self.collection_name)
-                logger.info(f"Connected to existing ChromaDB collection: {self.collection_name}")
-            except ValueError:
-                # Collection doesn't exist, create it
-                self.collection = self.client.create_collection(
-                    name=self.collection_name,
-                    metadata={"description": "EasyPrompt document embeddings"}
-                )
-                logger.info(f"Created new ChromaDB collection: {self.collection_name}")
+            logger.info(f"Connected to ChromaDB collection: {self.collection_name}")
 
         except Exception as e:
             logger.error(f"Failed to initialize ChromaDB: {e}")
@@ -85,14 +78,15 @@ class ChromaDBAdapter(BaseVectorDB):
                 documents_content.append(doc["content"])
 
             # Add to collection in a thread to avoid blocking
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                self.collection.add,
-                embeddings,
-                metadatas,
-                documents_content,
-                ids
-            )
+            def add_to_collection():
+                self.collection.add(
+                    embeddings=embeddings,
+                    metadatas=metadatas,
+                    documents=documents_content,
+                    ids=ids
+                )
+
+            await asyncio.get_event_loop().run_in_executor(None, add_to_collection)
 
             logger.debug(f"Added {len(documents)} documents to ChromaDB")
 
@@ -119,13 +113,14 @@ class ChromaDBAdapter(BaseVectorDB):
             where_clause = filters if filters else None
 
             # Query the collection
-            results = await asyncio.get_event_loop().run_in_executor(
-                None,
-                self.collection.query,
-                [query_embedding_list],
-                top_k,
-                where_clause
-            )
+            def query_collection():
+                return self.collection.query(
+                    query_embeddings=[query_embedding_list],
+                    n_results=top_k,
+                    where=where_clause
+                )
+
+            results = await asyncio.get_event_loop().run_in_executor(None, query_collection)
 
             # Process results
             processed_results = []

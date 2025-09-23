@@ -29,7 +29,6 @@ class OpenAIProvider(BaseLLMProvider):
         self,
         user_query: str,
         context: str,
-        cli_tool_name: str,
         **kwargs
     ) -> LLMResponse:
         """Generate a CLI command using OpenAI."""
@@ -37,7 +36,7 @@ class OpenAIProvider(BaseLLMProvider):
             await self.initialize()
 
         messages = self.create_command_generation_prompt(
-            user_query, context, cli_tool_name
+            user_query, context
         )
 
         try:

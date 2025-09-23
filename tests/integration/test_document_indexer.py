@@ -231,8 +231,7 @@ class TestDocumentIndexerIntegration:
     async def test_get_default_paths(self, indexer):
         """Test getting default paths for indexing."""
         indexer.settings.readme_path = "/path/to/README.md"
-        indexer.settings.docs_path = "/path/to/docs"
-        indexer.settings.additional_docs = "extra1.md,extra2.md"
+        indexer.settings.docs_path = "/path/to/docs;extra1.md;extra2.md"
 
         paths = indexer._get_default_paths()
 

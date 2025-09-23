@@ -52,10 +52,8 @@ def launch_interactive_session():
             elif choice == "3":
                 handle_query()
             elif choice == "4":
-                handle_chat()
-            elif choice == "5":
                 handle_search()
-            elif choice == "6":
+            elif choice == "5":
                 handle_status()
             elif choice == "q":
                 console.print("[yellow]Goodbye! 👋[/yellow]")
@@ -121,9 +119,8 @@ def show_main_menu() -> str:
         ("1", "⚙️  Configuration", "Set up or modify your EasyPrompt configuration"),
         ("2", "📚 Index Documentation", "Index your documentation files for RAG search"),
         ("3", "❓ Ask Question", "Ask a single question about your documentation"),
-        ("4", "💬 Chat Session", "Start an interactive chat with your documentation"),
-        ("5", "🔍 Search Documents", "Search your documentation without AI"),
-        ("6", "📊 System Status", "View detailed system status and configuration"),
+        ("4", "🔍 Search Documents", "Search your documentation without AI"),
+        ("5", "📊 System Status", "View detailed system status and configuration"),
         ("q", "🚪 Exit", "Exit EasyPrompt")
     ]
 
@@ -169,10 +166,51 @@ def handle_indexing():
         style="green"
     ))
 
-    console.print("This will index your documentation files for RAG search.")
-    console.print(f"Documentation path: [cyan]{settings.docs_path}[/cyan]")
-    console.print()
+    console.print("[bold blue]📖 What is indexing?[/bold blue]")
+    console.print("• Processes your documentation files into searchable chunks")
+    console.print("• Creates vector embeddings for semantic search")
+    console.print("• Stores data in your chosen vector database for fast retrieval")
 
+    console.print(f"\n[bold green]📁 Current Configuration:[/bold green]")
+    console.print(f"• Documentation path: [cyan]{settings.docs_path}[/cyan]")
+    console.print(f"• Supported file types: [cyan]{settings.supported_file_types}[/cyan]")
+    console.print(f"• Chunking strategy: [cyan]{settings.chunking_strategy}[/cyan]")
+    console.print(f"• Chunk size: [cyan]{settings.chunk_size}[/cyan] characters")
+    console.print(f"• Vector database: [cyan]{settings.vector_db_type}[/cyan]")
+    console.print(f"• Embedding model: [cyan]{settings.embedding_model.split('/')[-1]}[/cyan]")
+
+    # Count files that will be processed
+    from pathlib import Path
+    import os
+
+    try:
+        doc_path = Path(settings.docs_path)
+        if doc_path.exists():
+            file_extensions = [f".{ext.strip()}" for ext in settings.supported_file_types.split(",")]
+            files_to_index = []
+            for ext in file_extensions:
+                files_to_index.extend(list(doc_path.glob(f"*{ext}")))
+
+            console.print(f"\n[bold yellow]📊 Files to Process:[/bold yellow]")
+            console.print(f"• Found [yellow]{len(files_to_index)}[/yellow] files in documentation directory")
+
+            # Show first few files as examples
+            if files_to_index:
+                console.print(f"• Examples: {', '.join([f.name for f in files_to_index[:3]])}{'...' if len(files_to_index) > 3 else ''}")
+        else:
+            console.print(f"\n[red]⚠️  Documentation path does not exist: {settings.docs_path}[/red]")
+    except Exception as e:
+        console.print(f"\n[yellow]⚠️  Could not scan documentation path: {e}[/yellow]")
+
+    console.print(f"\n[bold cyan]🔄 What will happen:[/bold cyan]")
+    console.print("1. [dim]Scan documentation directory for supported files[/dim]")
+    console.print("2. [dim]Parse and extract text content from each file[/dim]")
+    console.print("3. [dim]Split text into chunks using your chunking strategy[/dim]")
+    console.print("4. [dim]Generate vector embeddings for each chunk[/dim]")
+    console.print("5. [dim]Store embeddings in your vector database[/dim]")
+    console.print("6. [dim]Create metadata index for fast retrieval[/dim]")
+
+    console.print()
     rebuild = Confirm.ask("Rebuild entire index (recommended for first time)?", default=True)
     verbose = Confirm.ask("Show detailed progress?", default=False)
 
@@ -236,30 +274,6 @@ def handle_query():
         console.print("\n[yellow]Question cancelled.[/yellow]")
         console.input("\n[dim]Press Enter to continue...[/dim]")
 
-
-def handle_chat():
-    """Handle interactive chat session with lazy loading."""
-    # Lazy load settings
-    try:
-        from ..config import Settings
-        settings = Settings()
-    except Exception as e:
-        console.print(f"[red]Configuration error: {e}[/red]")
-        console.print("Please configure EasyPrompt first (option 1)")
-        console.input("\n[dim]Press Enter to continue...[/dim]")
-        return
-
-    console.print("[blue]💬 Starting chat session...[/blue]")
-    console.print("[dim]You'll return to the main menu when the chat session ends.[/dim]")
-    console.input("\n[dim]Press Enter to continue...[/dim]")
-
-    try:
-        from .commands import ChatCommand
-        command = ChatCommand(settings, console)
-        command.run(provider=None)
-    except Exception as e:
-        console.print(f"[red]❌ Chat failed: {e}[/red]")
-        console.input("\n[dim]Press Enter to continue...[/dim]")
 
 
 def handle_search():

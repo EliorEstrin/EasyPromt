@@ -270,7 +270,6 @@ class QueryProcessor:
         try:
             status = {
                 "initialized": self._initialized,
-                "cli_tool": self.settings.cli_tool_name,
                 "embedding_model": self.settings.embedding_model,
                 "vector_db_type": self.settings.vector_db_type,
             }
@@ -349,6 +348,59 @@ class QueryProcessor:
             recommendations.append("✋ Confirmation is enabled. You will be prompted before execution.")
 
         return recommendations
+
+    async def process_qa_query(
+        self,
+        query: str,
+        context_filters: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Process a Q&A query and generate an answer from documentation."""
+        start_time = time.time()
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            # Retrieve relevant context
+            context_chunks = await self.context_retriever.retrieve_context(
+                query,
+                filters=context_filters
+            )
+
+            if not context_chunks:
+                return {
+                    "success": False,
+                    "answer": "No relevant documentation found for your question.",
+                    "context_used": [],
+                    "processing_time": time.time() - start_time
+                }
+
+            # Generate answer using Q&A mode
+            context_text = "\n\n".join([chunk["content"] for chunk in context_chunks])
+            answer = await self.command_generator.generate_answer(query, context_text)
+
+            # Extract unique files used
+            files_used = list(set([chunk["metadata"].get("file_path", "unknown") for chunk in context_chunks]))
+
+            # Calculate processing time
+            processing_time = time.time() - start_time
+
+            return {
+                "success": True,
+                "answer": answer,
+                "context_used": context_chunks,
+                "files_used": files_used,
+                "processing_time": processing_time
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing Q&A query: {e}")
+            return {
+                "success": False,
+                "answer": f"Error processing question: {str(e)}",
+                "context_used": [],
+                "processing_time": time.time() - start_time
+            }
 
     async def close(self) -> None:
         """Close the query processor and cleanup resources."""

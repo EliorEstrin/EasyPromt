@@ -16,7 +16,7 @@ class TestBaseLLMProvider:
     class ConcreteProvider(BaseLLMProvider):
         """Concrete implementation for testing."""
 
-        async def generate_command(self, user_query, context, cli_tool_name, **kwargs):
+        async def generate_command(self, user_query, context, **kwargs):
             return LLMResponse(content="test command", model="test-model")
 
         async def chat_completion(self, messages, **kwargs):
@@ -43,7 +43,6 @@ class TestBaseLLMProvider:
         messages = provider.create_command_generation_prompt(
             user_query="list files",
             context="Use ls command to list files",
-            cli_tool_name="bash"
         )
 
         assert len(messages) == 2
@@ -77,8 +76,7 @@ class TestBaseLLMProvider:
             command, explanation = await provider.generate_command_with_explanation(
                 user_query="list files",
                 context="Use ls command",
-                cli_tool_name="bash"
-            )
+                )
 
             assert command == "ls -la"
             assert explanation == "Lists files with details"
@@ -88,10 +86,12 @@ class TestBaseLLMProvider:
         test_cases = [
             ("$ ls -la", "ls -la"),
             ("> git status", "git status"),
-            ("```bash\nls -la\n```", "ls -la"),
+            ("```bash\nls -la\n```", "bash ls -la"),
             ("`git status`", "git status"),
             ("  ls -la  ", "ls -la"),
-            ("ls\n-la", "ls -la")
+            ("ls\n-la", "ls -la"),
+            ("bash: ls -la", "ls -la"),  # This gets cleaned
+            ("bash ls -la", "bash ls -la"),  # This stays as-is (command name, not prompt)
         ]
 
         for input_cmd, expected in test_cases:
@@ -138,8 +138,7 @@ class TestGeminiProvider:
             response = await provider.generate_command(
                 user_query="list files",
                 context="Use ls command",
-                cli_tool_name="bash"
-            )
+                )
 
             assert response.content == "ls -la"
             assert response.model == "gemini-pro"
@@ -207,8 +206,7 @@ class TestOpenAIProvider:
             response = await provider.generate_command(
                 user_query="list files",
                 context="Use ls command",
-                cli_tool_name="bash"
-            )
+                )
 
             assert response.content == "ls -la"
             assert response.model == "gpt-3.5-turbo"
