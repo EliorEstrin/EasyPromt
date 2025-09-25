@@ -1,7 +1,7 @@
 // .devcontainer/devcontainer.json
 {
   "name": "My Codespace",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "image": "mcr.microsoft.com/vscode/devcontainers/universal:latest",
   "customizations": {
     "vscode": {
       "extensions": [
