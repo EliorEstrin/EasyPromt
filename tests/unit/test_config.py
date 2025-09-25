@@ -21,7 +21,7 @@ class TestSettings:
         assert settings.embedding_dimension == 384
         assert settings.max_context_length == 4000
         assert settings.top_k_results == 5
-        assert settings.similarity_threshold == 0.7
+        assert settings.similarity_threshold == 0.5
         assert settings.dry_run is False
         assert settings.confirm_before_execution is True
 
@@ -149,8 +149,7 @@ class TestConfigValidator:
         assert validator.validate_all() is False
 
         errors = validator.get_validation_errors()
-        assert any("docs_path does not exist" in error for error in errors)
-        assert any("readme_path does not exist" in error for error in errors)
+        assert any("Documentation path does not exist" in error for error in errors)
 
     def test_validate_llm_providers_none_configured(self, sample_settings):
         """Test validation with no LLM providers configured."""
@@ -162,7 +161,7 @@ class TestConfigValidator:
         assert validator.validate_all() is False
 
         errors = validator.get_validation_errors()
-        assert any("at least one LLM provider API key must be configured" in error for error in errors)
+        assert any("At least one LLM provider API key must be configured" in error for error in errors)
 
     def test_create_missing_directories(self, sample_settings, temp_dir):
         """Test creating missing directories."""

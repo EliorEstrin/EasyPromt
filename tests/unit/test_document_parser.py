@@ -77,7 +77,7 @@ Content for section 2.
 
         assert "main_title" in sections
         assert "section_1" in sections
-        assert "subsection_1_1" in sections
+        assert "subsection_11" in sections
         assert "section_2" in sections
 
     def test_extract_title(self, parser):

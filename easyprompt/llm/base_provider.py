@@ -1,8 +1,11 @@
 """Base class for LLM providers."""
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
