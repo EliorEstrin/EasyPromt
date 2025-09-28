@@ -1,12 +1,12 @@
 #!/bin/bash
 # Activate EasyPrompt development environment
 
-source "/home/elior/EasyPromt_repo/venv/bin/activate"
-export PYTHONPATH="/home/elior/EasyPromt_repo:$PYTHONPATH"
+source "/Users/dvirpa/Documents/EasyPromt/venv/bin/activate"
+export PYTHONPATH="/Users/dvirpa/Documents/EasyPromt:$PYTHONPATH"
 
 echo "🚀 EasyPrompt development environment activated!"
-echo "Virtual environment: /home/elior/EasyPromt_repo/venv"
-echo "Project directory: /home/elior/EasyPromt_repo"
+echo "Virtual environment: /Users/dvirpa/Documents/EasyPromt/venv"
+echo "Project directory: /Users/dvirpa/Documents/EasyPromt"
 echo ""
 echo "Available commands:"
 echo "  easyprompt --help     # Show help"
